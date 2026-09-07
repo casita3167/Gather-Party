@@ -140,6 +140,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--primary); box-sh
 .slot-tag { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: white; font-size: .82rem; }
 
 .slot-editor { display: grid; gap: 10px; margin-top: 16px; }
+.empty-editor { margin: 0; padding: 16px; border: 1px dashed #bdc3cf; border-radius: 15px; color: var(--muted); background: #fafbfc; font-size: .86rem; line-height: 1.6; text-align: center; }
 .slot-row { padding: 13px; border: 1px solid var(--line); border-radius: 15px; background: #fafbfc; }
 .slot-row-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; color: var(--muted); font-size: .82rem; font-weight: 700; }
 .slot-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -183,12 +184,23 @@ input:focus, textarea:focus, select:focus { border-color: var(--primary); box-sh
 .calendar-people::-webkit-scrollbar { display: none; }
 .calendar-person { display: inline-flex; align-items: center; flex: none; gap: 3px; }
 .calendar-person + .calendar-person { margin-left: 2px; padding-left: 6px; border-left: 1px solid #d9dde5; }
+.calendar-delete { width: 20px; height: 20px; display: grid; place-items: center; flex: none; padding: 0; border: 0; border-radius: 6px; color: #9b2c24; background: #fee4e2; font-size: .78rem; font-weight: 900; line-height: 1; }
+.calendar-delete:hover { color: white; background: var(--danger); }
 .user-token { width: 23px; height: 23px; display: grid; place-items: center; flex: none; border-radius: 50%; color: hsl(var(--token-hue) 45% 25%); background: hsl(var(--token-hue) 70% 88%); font-size: .7rem; font-weight: 900; }
 .calendar-name { max-width: 56px; overflow: hidden; color: #344054; font-size: .72rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
 .period-tag { position: relative; width: 24px; height: 24px; display: grid; place-items: center; flex: none; border-radius: 7px; font-size: .7rem; font-weight: 900; outline: none; cursor: help; }
 .period-morning { color: #854a0e; background: #fff2c7; }
 .period-afternoon { color: #a13d12; background: #ffe2c7; }
 .period-evening { color: #3730a3; background: #e2e4ff; }
+.ready-summary { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.ready-summary-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ready-summary-head h3 { margin: 0; font-size: 1.08rem; }
+.ready-summary-head p { margin: 5px 0 0; color: var(--muted); font-size: .86rem; }
+.ready-list { display: grid; gap: 8px; margin-top: 12px; }
+.ready-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid #b7e4cb; border-radius: 12px; background: var(--success-soft); }
+.ready-item b { color: #075f3c; font-size: .92rem; }
+.ready-item span { color: var(--muted); font-size: .82rem; text-align: right; }
+.ready-empty { margin: 12px 0 0; padding: 14px; border-radius: 12px; color: var(--muted); background: #f7f8fa; font-size: .88rem; text-align: center; }
 .period-tag::after { content: attr(data-time); position: absolute; z-index: 20; right: -3px; bottom: calc(100% + 7px); padding: 5px 8px; border-radius: 7px; color: white; background: #101828; font-size: .75rem; font-weight: 750; white-space: nowrap; box-shadow: 0 6px 18px rgb(16 24 40 / .2); opacity: 0; transform: translateY(3px); pointer-events: none; transition: .15s; }
 .period-tag::before { content: ""; position: absolute; z-index: 21; right: 7px; bottom: calc(100% + 2px); border: 5px solid transparent; border-top-color: #101828; opacity: 0; pointer-events: none; transition: .15s; }
 .period-tag:hover::after, .period-tag:hover::before, .period-tag:focus-visible::after, .period-tag:focus-visible::before { opacity: 1; transform: translateY(0); }
@@ -214,6 +226,8 @@ input:focus, textarea:focus, select:focus { border-color: var(--primary); box-sh
   .suggestion { align-items: flex-start; }
   .best-tag { display: none; }
   .calendar-toolbar { align-items: flex-start; }
+  .ready-summary-head, .ready-item { align-items: flex-start; flex-direction: column; }
+  .ready-item span { text-align: left; }
 }
 
 @media (prefers-reduced-motion: reduce) {
