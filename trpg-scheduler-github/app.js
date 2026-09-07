@@ -1,13 +1,12 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
-import {
-  addDoc, collection, doc, getDoc, getFirestore, onSnapshot, serverTimestamp, setDoc
-} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+import { addDoc, collection, doc, getDoc, getFirestore, onSnapshot, serverTimestamp, setDoc } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 const root = document.querySelector("#app");
 const toastNode = document.querySelector("#toast");
 const DAYS = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"];
+const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 let auth;
 let db;
 let user;
@@ -16,6 +15,7 @@ let availability = [];
 let draftSlots = [];
 let unsubscribe = null;
 let editorInitialized = false;
+let calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
@@ -33,31 +33,20 @@ function isConfigured() {
 }
 
 function setupScreen() {
-  root.innerHTML = `
-    <main class="card setup-card">
-      <div class="brandmark" aria-hidden="true">⚄</div>
-      <h1>還差 Firebase 設定</h1>
-      <p>網頁檔案已經可以使用，但還需要連上你的 Firebase 專案，才能讓不同玩家共同填寫。</p>
-      <ol>
-        <li>依照 <code>README.md</code> 建立 Firebase 專案。</li>
-        <li>把網頁設定貼進 <code>firebase-config.js</code>。</li>
-        <li>重新上傳 GitHub 後再開啟這個頁面。</li>
-      </ol>
-      <p><a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer">前往 Firebase Console</a></p>
-    </main>`;
+  root.innerHTML = `<main class="card setup-card"><div class="brandmark" aria-hidden="true">⚄</div><h1>還差 Firebase 設定</h1><p>網頁檔案已經可以使用，但還需要連上你的 Firebase 專案，才能讓不同玩家共同填寫。</p><ol><li>依照 <code>README.md</code> 建立 Firebase 專案。</li><li>把網頁設定貼進 <code>firebase-config.js</code>。</li><li>重新上傳 GitHub 後再開啟這個頁面。</li></ol><p><a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer">前往 Firebase Console</a></p></main>`;
 }
 
 function brandBar(withShare = false) {
-  return `<header class="brandbar">
-    <a class="brand" href="#"><span class="brandmark" aria-hidden="true">⚄</span><span>約團時間表<small>不用註冊，貼連結就能一起填</small></span></a>
-    ${withShare ? '<button class="button secondary" id="copy-link" type="button">複製分享連結</button>' : ""}
-  </header>`;
+  return `<header class="brandbar"><a class="brand" href="#"><span class="brandmark" aria-hidden="true">⚄</span><span>約團時間表<small>不用註冊，貼連結就能一起填</small></span></a>${withShare ? '<button class="button secondary" id="copy-link" type="button">複製分享連結</button>' : ""}</header>`;
 }
 
 function newSlot(kind) {
-  return kind === "weekly"
-    ? { weekday: 5, startTime: "19:00", endTime: "23:00" }
-    : { start: "", end: "" };
+  return kind === "weekly" ? { weekday: 5, time: "19:00" } : { date: "", time: "19:00" };
+}
+
+function normalizeSlot(slot, kind) {
+  if (kind === "weekly") return { weekday: Number(slot.weekday ?? 5), time: slot.time || slot.startTime || "19:00" };
+  return { date: slot.date || slot.start?.slice(0, 10) || "", time: slot.time || slot.start?.slice(11, 16) || "19:00" };
 }
 
 function renderHome() {
@@ -65,39 +54,17 @@ function renderHome() {
   availability = [];
   if (unsubscribe) unsubscribe();
   unsubscribe = null;
-  root.innerHTML = `<main class="shell">
-    ${brandBar()}
-    <div class="home-grid">
-      <section class="intro">
-        <span class="eyebrow">◷ 幾分鐘內決定開團時間</span>
-        <h1>把大家有空的時間，<span>收在同一張表。</span></h1>
-        <p>建立團務後分享連結，玩家只要填暱稱與可行時段。系統會自動找出重疊最多的時間。</p>
-        <div class="feature-row">
-          <div class="mini-card"><b>單次約團</b><span>適合短團、單次聚會與臨時團</span></div>
-          <div class="mini-card"><b>每週固定</b><span>適合長團與固定週期的團務</span></div>
-        </div>
-      </section>
-      <form class="card create-card" id="create-form">
-        <h2 class="card-title">建立新的約團表</h2>
-        <p class="card-sub">建立後就會取得可分享的專屬連結</p>
-        <div class="field"><label for="event-title">團務名稱</label><input id="event-title" name="title" maxlength="60" required placeholder="例如：寂靜之音・第三章"></div>
-        <div class="field"><span class="field-label">安排方式</span>
-          <div class="segment">
-            <input id="kind-single" type="radio" name="kind" value="single" checked><label for="kind-single">單次約團</label>
-            <input id="kind-weekly" type="radio" name="kind" value="weekly"><label for="kind-weekly">每週固定</label>
-          </div>
-          <p class="helper" id="kind-help">玩家填寫實際日期與時間。</p>
-        </div>
-        <div class="field"><label for="event-note">補充說明 <span>（選填）</span></label><textarea id="event-note" name="note" maxlength="300" placeholder="例如：預計跑 4～5 小時，希望最晚 20:00 開始"></textarea></div>
-        <p class="message error" id="create-error"></p>
-        <button class="button full" type="submit">建立約團表</button>
-      </form>
-    </div>
-  </main>`;
-
+  root.innerHTML = `<main class="shell">${brandBar()}<div class="home-grid">
+    <section class="intro"><span class="eyebrow">◷ 幾分鐘內決定開團時間</span><h1>把大家有空的時間，<span>收在同一張表。</span></h1><p>建立團務後分享連結，玩家只要填暱稱與可行時間。月曆會將相同時間的玩家排在一起。</p><div class="feature-row"><div class="mini-card"><b>單次約團</b><span>適合短團、單次聚會與臨時團</span></div><div class="mini-card"><b>每週固定</b><span>適合長團與固定週期的團務</span></div></div></section>
+    <form class="card create-card" id="create-form"><h2 class="card-title">建立新的約團表</h2><p class="card-sub">建立後就會取得可分享的專屬連結</p>
+      <div class="field"><label for="event-title">團務名稱</label><input id="event-title" name="title" maxlength="60" required placeholder="例如：我們的旅途"></div>
+      <div class="field"><span class="field-label">安排方式</span><div class="segment"><input id="kind-single" type="radio" name="kind" value="single" checked><label for="kind-single">單次約團</label><input id="kind-weekly" type="radio" name="kind" value="weekly"><label for="kind-weekly">每週固定</label></div><p class="helper" id="kind-help">玩家填寫日期與一個可行時間。</p></div>
+      <div class="field"><label for="event-note">補充說明 <span>（選填）</span></label><textarea id="event-note" name="note" maxlength="300" placeholder="例如：每次預計進行 4～5 小時"></textarea></div>
+      <p class="message error" id="create-error"></p><button class="button full" type="submit">建立約團表</button>
+    </form></div></main>`;
   const form = document.querySelector("#create-form");
   form.addEventListener("change", event => {
-    if (event.target.name === "kind") document.querySelector("#kind-help").textContent = event.target.value === "single" ? "玩家填寫實際日期與時間。" : "玩家填寫每週固定有空的星期與時間。";
+    if (event.target.name === "kind") document.querySelector("#kind-help").textContent = event.target.value === "single" ? "玩家填寫日期與一個可行時間。" : "玩家填寫每週固定有空的星期與時間。";
   });
   form.addEventListener("submit", createEvent);
 }
@@ -143,25 +110,29 @@ async function openEvent(eventId) {
   editorInitialized = false;
   root.innerHTML = '<main class="loading-screen"><div class="spinner"></div><p>正在讀取約團表⋯</p></main>';
   try {
-    const eventRef = doc(db, "events", eventId);
-    const snapshot = await getDoc(eventRef);
+    const snapshot = await getDoc(doc(db, "events", eventId));
     if (!snapshot.exists()) return notFound("找不到這張約團表，可能已被刪除或連結不完整。");
     currentEvent = { id: snapshot.id, ...snapshot.data() };
     if (!["single", "weekly"].includes(currentEvent.kind)) return notFound("這張約團表的格式無法辨識。");
     draftSlots = [newSlot(currentEvent.kind)];
+    calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     renderEventShell();
     unsubscribe = onSnapshot(collection(db, "events", eventId, "availability"), result => {
       availability = result.docs.map(item => ({ id: item.id, ...item.data() }));
       const mine = availability.find(item => item.id === user.uid);
       if (!editorInitialized) {
         if (mine?.slots?.length) {
-          draftSlots = mine.slots.map(slot => ({ ...slot }));
+          draftSlots = mine.slots.map(slot => normalizeSlot(slot, currentEvent.kind));
           document.querySelector("#player-name").value = mine.name;
+          if (currentEvent.kind === "single" && draftSlots[0].date) {
+            const [year, month] = draftSlots[0].date.split("-").map(Number);
+            calendarCursor = new Date(year, month - 1, 1);
+          }
         }
         editorInitialized = true;
         renderEditor();
       }
-      renderSummary();
+      renderCalendar();
     }, err => {
       console.error(err);
       const node = document.querySelector("#load-error");
@@ -178,44 +149,35 @@ function notFound(message) {
 }
 
 function renderEventShell() {
-  root.innerHTML = `<main class="shell">
-    ${brandBar(true)}
+  root.innerHTML = `<main class="shell">${brandBar(true)}
     <section class="event-head"><div class="event-head-row"><div><span class="pill">${currentEvent.kind === "single" ? "單次約團" : "每週固定"}</span><h1>${escapeHtml(currentEvent.title)}</h1>${currentEvent.note ? `<p>${escapeHtml(currentEvent.note)}</p>` : ""}</div><div class="count-box"><b id="people-count">0</b><span>人已填寫</span></div></div></section>
-    <div class="event-grid">
-      <div>
-        <section class="panel"><div class="panel-heading"><div><h2>推薦時段</h2><p>依可出席人數排序</p></div></div><div id="suggestions"></div></section>
-        <section class="panel"><div class="panel-heading"><div><h2>大家填的時間</h2></div></div><div id="people"></div></section>
-      </div>
-      <form class="panel sticky" id="availability-form">
-        <div class="panel-heading"><div><h2>填寫我的時間</h2><p>你可以回來修改自己填過的資料</p></div></div>
-        <div class="field"><label for="player-name">你的暱稱</label><input id="player-name" maxlength="24" required placeholder="例如：點心" value="${escapeHtml(localStorage.getItem("trpg-scheduler-name") || "")}"></div>
-        <div class="slot-editor" id="slot-editor"></div>
-        <button class="button dashed" id="add-slot" type="button">＋ 再加一個時段</button>
-        <p class="message" id="save-message"></p><p class="message error" id="load-error"></p>
-        <button class="button full" type="submit">儲存我的時間</button>
-      </form>
-    </div>
-    <p class="footer-note">約團資料僅能透過完整分享連結開啟，請留意不要公開張貼包含私人行程的內容。</p>
-  </main>`;
+    <div class="event-grid calendar-layout"><section class="panel calendar-panel"><div class="calendar-toolbar"><div><h2>團務月曆</h2><p>早／中／晚標籤移上去可查看實際時間</p></div><div class="calendar-nav"><button class="button secondary compact" id="previous-month" type="button" aria-label="上一個月">‹</button><button class="button secondary compact today-button" id="today-month" type="button">今天</button><button class="button secondary compact" id="next-month" type="button" aria-label="下一個月">›</button></div></div><h3 class="month-title" id="month-title"></h3><div class="calendar-scroll"><div class="calendar" id="calendar"></div></div></section>
+      <form class="panel sticky" id="availability-form"><div class="panel-heading"><div><h2>填寫我的時間</h2><p>每筆資料填寫一個可行時間</p></div></div><div class="field"><label for="player-name">你的暱稱</label><input id="player-name" maxlength="24" required placeholder="例如：小明" value="${escapeHtml(localStorage.getItem("trpg-scheduler-name") || "")}"></div><div class="slot-editor" id="slot-editor"></div><button class="button dashed" id="add-slot" type="button">＋ 再加一個時間</button><p class="message" id="save-message"></p><p class="message error" id="load-error"></p><button class="button full" type="submit">儲存我的時間</button></form>
+    </div><p class="footer-note">知道完整分享連結的人可以看到團務名稱、暱稱與時間，請避免填寫私密內容。</p></main>`;
   document.querySelector("#copy-link").addEventListener("click", copyLink);
   document.querySelector("#availability-form").addEventListener("submit", saveAvailability);
   document.querySelector("#add-slot").addEventListener("click", () => {
-    if (draftSlots.length >= 30) return toast("最多可以加入 30 個時段");
+    if (draftSlots.length >= 30) return toast("最多可以加入 30 個時間");
     syncDraftInputs();
     draftSlots.push(newSlot(currentEvent.kind));
     renderEditor();
   });
+  document.querySelector("#previous-month").addEventListener("click", () => changeMonth(-1));
+  document.querySelector("#next-month").addEventListener("click", () => changeMonth(1));
+  document.querySelector("#today-month").addEventListener("click", () => {
+    calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    renderCalendar();
+  });
   renderEditor();
-  renderSummary();
+  renderCalendar();
 }
 
 function renderEditor() {
   const editor = document.querySelector("#slot-editor");
   if (!editor) return;
-  editor.innerHTML = draftSlots.map((slot, index) => `<div class="slot-row" data-index="${index}">
-    <div class="slot-row-head"><span>可行時段 ${index + 1}</span>${draftSlots.length > 1 ? `<button class="icon-button remove-slot" type="button" aria-label="刪除時段 ${index + 1}" data-index="${index}">×</button>` : ""}</div>
-    ${currentEvent.kind === "single" ? `<div class="slot-fields"><label>開始<input type="datetime-local" data-key="start" value="${escapeHtml(slot.start || "")}" required></label><label>結束<input type="datetime-local" data-key="end" value="${escapeHtml(slot.end || "")}" required></label></div>` : `<div class="slot-fields weekly"><label>星期<select data-key="weekday">${DAYS.map((day, dayIndex) => `<option value="${dayIndex}" ${Number(slot.weekday) === dayIndex ? "selected" : ""}>${day}</option>`).join("")}</select></label><label>開始<input type="time" data-key="startTime" value="${escapeHtml(slot.startTime || "19:00")}" required></label><label>結束<input type="time" data-key="endTime" value="${escapeHtml(slot.endTime || "23:00")}" required></label></div>`}
-  </div>`).join("");
+  editor.innerHTML = draftSlots.map((slot, index) => `<div class="slot-row" data-index="${index}"><div class="slot-row-head"><span>可行時間 ${index + 1}</span>${draftSlots.length > 1 ? `<button class="icon-button remove-slot" type="button" aria-label="刪除時間 ${index + 1}" data-index="${index}">×</button>` : ""}</div>
+    ${currentEvent.kind === "single" ? `<div class="slot-fields"><label>日期<input type="date" data-key="date" value="${escapeHtml(slot.date || "")}" required></label><label>時間<input type="text" inputmode="numeric" maxlength="5" placeholder="19:30" data-key="time" value="${escapeHtml(slot.time || "")}" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" required></label></div>` : `<div class="slot-fields"><label>星期<select data-key="weekday">${DAYS.map((day, dayIndex) => `<option value="${dayIndex}" ${Number(slot.weekday) === dayIndex ? "selected" : ""}>${day}</option>`).join("")}</select></label><label>時間<input type="text" inputmode="numeric" maxlength="5" placeholder="19:30" data-key="time" value="${escapeHtml(slot.time || "")}" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" required></label></div>`}
+    <p class="time-hint">請輸入 24 小時制，例如 09:00 或 19:30</p></div>`).join("");
   editor.querySelectorAll("input, select").forEach(input => input.addEventListener("change", syncDraftInputs));
   editor.querySelectorAll(".remove-slot").forEach(button => button.addEventListener("click", () => {
     syncDraftInputs();
@@ -240,17 +202,20 @@ async function saveAvailability(event) {
   const message = document.querySelector("#save-message");
   const button = event.currentTarget.querySelector("button[type=submit]");
   if (!name) return showMessage(message, "請輸入你的暱稱");
-  const invalid = currentEvent.kind === "single"
-    ? draftSlots.some(slot => !slot.start || !slot.end || slot.end <= slot.start)
-    : draftSlots.some(slot => !slot.startTime || !slot.endTime || slot.endTime <= slot.startTime);
-  if (invalid) return showMessage(message, "請確認每個時段的開始與結束時間");
+  const invalid = draftSlots.some(slot => (currentEvent.kind === "single" && !slot.date) || !TIME_PATTERN.test(slot.time || ""));
+  if (invalid) return showMessage(message, "請確認日期，並以 HH:mm 格式輸入時間，例如 19:30。");
   button.disabled = true;
   button.textContent = "儲存中⋯";
   message.classList.remove("show");
   try {
     await setDoc(doc(db, "events", currentEvent.id, "availability", user.uid), { name, slots: draftSlots, updatedAt: serverTimestamp() });
     localStorage.setItem("trpg-scheduler-name", name);
+    if (currentEvent.kind === "single" && draftSlots[0].date) {
+      const [year, month] = draftSlots[0].date.split("-").map(Number);
+      calendarCursor = new Date(year, month - 1, 1);
+    }
     showMessage(message, "已儲存！這台裝置之後仍可回來修改。", "success");
+    renderCalendar();
   } catch (err) {
     console.error(err);
     showMessage(message, "儲存失敗，請確認 Firebase 設定與資料庫規則。");
@@ -260,59 +225,75 @@ async function saveAvailability(event) {
   }
 }
 
-function renderSummary() {
+function changeMonth(amount) {
+  calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + amount, 1);
+  renderCalendar();
+}
+
+function renderCalendar() {
+  const calendar = document.querySelector("#calendar");
+  const title = document.querySelector("#month-title");
   const count = document.querySelector("#people-count");
-  const suggestionsNode = document.querySelector("#suggestions");
-  const peopleNode = document.querySelector("#people");
-  if (!count || !suggestionsNode || !peopleNode) return;
+  if (!calendar || !title || !count) return;
   count.textContent = availability.length;
-  const suggestions = calculateSuggestions();
-  suggestionsNode.innerHTML = suggestions.length ? `<div class="suggestions">${suggestions.map((item, index) => `<div class="suggestion ${index === 0 ? "best" : ""}"><span class="number">${item.people.length}</span><div class="suggestion-main"><b>${escapeHtml(formatSuggestion(item))}</b><span>${escapeHtml(item.people.join("、"))}</span></div>${index === 0 ? '<span class="best-tag">最多人</span>' : ""}</div>`).join("")}</div>` : '<div class="empty">還沒有人填寫時段</div>';
-  peopleNode.innerHTML = availability.length ? `<div class="people-list">${availability.slice().sort((a, b) => a.name.localeCompare(b.name, "zh-Hant")).map(person => `<div class="person"><div class="person-head"><span class="person-name">♙ ${escapeHtml(person.name)}${person.id === user.uid ? ' <span class="best-tag">我</span>' : ""}</span></div><div class="slot-tags">${(person.slots || []).map(slot => `<span class="slot-tag">${escapeHtml(formatSlot(slot))}</span>`).join("")}</div></div>`).join("")}</div>` : '<div class="empty">分享連結給玩家，等大家填完就會顯示在這裡。</div>';
+  const year = calendarCursor.getFullYear();
+  const month = calendarCursor.getMonth();
+  title.textContent = `${year} 年 ${month + 1} 月`;
+  const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7;
+  const totalDays = new Date(year, month + 1, 0).getDate();
+  const today = new Date();
+  const todayKey = dateKey(today.getFullYear(), today.getMonth(), today.getDate());
+  const cells = [];
+  for (let blank = 0; blank < firstWeekday; blank++) cells.push('<div class="calendar-day outside" aria-hidden="true"></div>');
+  for (let day = 1; day <= totalDays; day++) {
+    const key = dateKey(year, month, day);
+    const weekday = (new Date(year, month, day).getDay() + 6) % 7;
+    const groups = entriesForDate(key, weekday);
+    cells.push(`<section class="calendar-day ${key === todayKey ? "is-today" : ""}"><div class="day-number">${day}</div><div class="day-entries">${groups.map(group => calendarEntry(group)).join("")}</div></section>`);
+  }
+  const remainder = (7 - (cells.length % 7)) % 7;
+  for (let blank = 0; blank < remainder; blank++) cells.push('<div class="calendar-day outside" aria-hidden="true"></div>');
+  calendar.innerHTML = `<div class="weekday">一</div><div class="weekday">二</div><div class="weekday">三</div><div class="weekday">四</div><div class="weekday">五</div><div class="weekday weekend">六</div><div class="weekday weekend">日</div>${cells.join("")}`;
 }
 
-function calculateSuggestions() {
-  const groups = new Map();
-  availability.forEach(person => (person.slots || []).forEach(slot => {
-    const groupKey = currentEvent.kind === "weekly" ? String(slot.weekday) : "date";
-    const start = currentEvent.kind === "weekly" ? slot.startTime : slot.start;
-    const end = currentEvent.kind === "weekly" ? slot.endTime : slot.end;
-    if (!start || !end || end <= start) return;
-    const group = groups.get(groupKey) || [];
-    group.push({ start, end, person: person.name });
-    groups.set(groupKey, group);
+function entriesForDate(key, weekday) {
+  const grouped = new Map();
+  availability.forEach(person => (person.slots || []).forEach(raw => {
+    const slot = normalizeSlot(raw, currentEvent.kind);
+    const matches = currentEvent.kind === "weekly" ? slot.weekday === weekday : slot.date === key;
+    if (!matches || !TIME_PATTERN.test(slot.time || "")) return;
+    const people = grouped.get(slot.time) || [];
+    if (!people.some(entry => entry.id === person.id)) people.push({ id: person.id, name: person.name });
+    grouped.set(slot.time, people);
   }));
-  const output = [];
-  groups.forEach((ranges, groupKey) => {
-    const boundaries = [...new Set(ranges.flatMap(range => [range.start, range.end]))].sort();
-    for (let index = 0; index < boundaries.length - 1; index++) {
-      const start = boundaries[index];
-      const end = boundaries[index + 1];
-      const people = [...new Set(ranges.filter(range => range.start <= start && range.end >= end).map(range => range.person))].sort();
-      if (!people.length) continue;
-      const previous = output.at(-1);
-      if (previous && previous.groupKey === groupKey && previous.end === start && previous.people.join("|") === people.join("|")) previous.end = end;
-      else output.push({ groupKey, start, end, weekday: currentEvent.kind === "weekly" ? Number(groupKey) : null, people });
-    }
-  });
-  return output.sort((a, b) => b.people.length - a.people.length || a.start.localeCompare(b.start)).slice(0, 8);
+  return [...grouped.entries()].sort(([timeA], [timeB]) => timeA.localeCompare(timeB)).map(([time, people]) => ({ time, people }));
 }
 
-function formatSuggestion(item) {
-  if (currentEvent.kind === "weekly") return `${DAYS[item.weekday]} ${item.start}－${item.end}`;
-  return `${formatDateTime(item.start)}－${item.end.slice(11, 16)}`;
+function calendarEntry(group) {
+  const period = periodFor(group.time);
+  const people = group.people.sort((a, b) => a.name.localeCompare(b.name, "zh-Hant")).map(person => {
+    const hue = colorHue(person.id || person.name);
+    const initial = [...String(person.name || "?")][0];
+    return `<span class="calendar-person"><span class="user-token" style="--token-hue:${hue}" aria-hidden="true">${escapeHtml(initial)}</span><span class="calendar-name">${escapeHtml(person.name)}</span></span>`;
+  }).join("");
+  return `<div class="calendar-entry"><div class="calendar-people">${people}</div><span class="period-tag period-${period.key}" data-time="${escapeHtml(group.time)}" tabindex="0" aria-label="${period.full}，${escapeHtml(group.time)}">${period.short}</span></div>`;
 }
 
-function formatSlot(slot) {
-  return currentEvent.kind === "weekly" ? `${DAYS[slot.weekday]} ${slot.startTime}－${slot.endTime}` : `${formatDateTime(slot.start)}－${slot.end.slice(11, 16)}`;
+function periodFor(time) {
+  const hour = Number(time.slice(0, 2));
+  if (hour < 12) return { key: "morning", short: "早", full: "早上" };
+  if (hour < 18) return { key: "afternoon", short: "中", full: "中午" };
+  return { key: "evening", short: "晚", full: "晚上" };
 }
 
-function formatDateTime(value) {
-  if (!value || value.length < 16) return value || "";
-  const [date, time] = value.split("T");
-  const [year, month, day] = date.split("-").map(Number);
-  const weekday = ["日", "一", "二", "三", "四", "五", "六"][new Date(year, month - 1, day).getDay()];
-  return `${month}/${day}（${weekday}）${time}`;
+function colorHue(value) {
+  let hash = 0;
+  for (const character of String(value)) hash = (hash * 31 + character.charCodeAt(0)) % 360;
+  return hash;
+}
+
+function dateKey(year, month, day) {
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 async function copyLink() {
