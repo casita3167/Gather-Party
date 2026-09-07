@@ -57,7 +57,7 @@ function renderHome() {
   root.innerHTML = `<main class="shell">${brandBar()}<div class="home-grid">
     <section class="intro"><span class="eyebrow">◷ 幾分鐘內決定開團時間</span><h1>把大家有空的時間，<span>收在同一張表。</span></h1><p>建立團務後分享連結，玩家只要填暱稱與可行時間。月曆會將相同時間的玩家排在一起。</p><div class="feature-row"><div class="mini-card"><b>單次約團</b><span>適合短團、單次聚會與臨時團</span></div><div class="mini-card"><b>每週固定</b><span>適合長團與固定週期的團務</span></div></div></section>
     <form class="card create-card" id="create-form"><h2 class="card-title">建立新的約團表</h2><p class="card-sub">建立後就會取得可分享的專屬連結</p>
-      <div class="field"><label for="event-title">團務名稱</label><input id="event-title" name="title" maxlength="60" required placeholder="例如：團務 一"></div>
+      <div class="field"><label for="event-title">團務名稱</label><input id="event-title" name="title" maxlength="60" required placeholder="例如：我們的旅途"></div>
       <div class="field"><span class="field-label">安排方式</span><div class="segment"><input id="kind-single" type="radio" name="kind" value="single" checked><label for="kind-single">單次約團</label><input id="kind-weekly" type="radio" name="kind" value="weekly"><label for="kind-weekly">每週固定</label></div><p class="helper" id="kind-help">玩家填寫日期與一個可行時間。</p></div>
       <div class="field"><label for="event-note">補充說明 <span>（選填）</span></label><textarea id="event-note" name="note" maxlength="300" placeholder="例如：每次預計進行 4～5 小時"></textarea></div>
       <p class="message error" id="create-error"></p><button class="button full" type="submit">建立約團表</button>
