@@ -1,0 +1,58 @@
+# 約團時間表：GitHub Pages＋Firebase 版
+
+這是一個免註冊的多人約團網頁。團主建立約團表並分享連結，玩家輸入暱稱、日期與單一可行時間後，資料會即時顯示在月曆中。
+
+## 功能
+
+- 單次約團：填寫實際日期與一個時間，不必填結束時間。
+- 每週固定：填寫星期與固定時間。
+- 每人可加入多個可行時間。
+- 月曆以圓形 Token、暱稱及早／中／晚標籤顯示資料。
+- 相同日期與時間的玩家會排列在同一列。
+- 將滑鼠移到早／中／晚標籤上，可以查看實際時間。
+- 玩家不必申請帳號，網站會在背景使用 Firebase 匿名登入。
+- 每位玩家只能修改自己瀏覽器建立的資料。
+- 手機與電腦皆可使用。
+
+## 一、建立 Firebase 專案
+
+1. 開啟 [Firebase Console](https://console.firebase.google.com/)，選擇「建立專案」。
+2. 進入「Build／Authentication」，按「開始使用」。
+3. 在「Sign-in method」啟用「Anonymous／匿名」登入。
+4. 進入「Build／Firestore Database」，按「建立資料庫」。
+5. 資料庫位置可選離台灣較近的區域；建立時選「正式版模式」。
+6. 在 Firestore 的「Rules／規則」頁面，將本資料夾內 `firestore.rules` 的全部內容貼上並發布。
+
+## 二、填入網站設定
+
+1. 回到 Firebase 專案首頁，按「專案設定」。
+2. 在「你的應用程式」選擇 Web 圖示 `</>`，建立一個 Web 應用程式。
+3. Firebase 會顯示一段 `firebaseConfig`。
+4. 開啟本資料夾的 `firebase-config.js`，將六個 `PASTE_...` 欄位換成 Firebase 提供的值。
+
+Firebase 的前端設定會出現在公開網頁中，這是正常設計。請勿把服務帳戶私鑰、Admin SDK 金鑰或其他私人憑證放進檔案。真正的存取限制由 `firestore.rules` 負責。
+
+## 三、上傳 GitHub
+
+1. 在 GitHub 建立新的 Repository，例如 `trpg-scheduler`。
+2. 將這個資料夾中的檔案全部上傳到 Repository 根目錄。
+3. 進入 Repository 的「Settings／Pages」。
+4. Source 選擇「Deploy from a branch」。
+5. Branch 選擇 `main`，資料夾選擇 `/ (root)`，按「Save」。
+6. 等待約一至數分鐘，GitHub 會提供網址：
+   `https://你的帳號.github.io/trpg-scheduler/`
+
+## 使用方式
+
+1. 開啟 GitHub Pages 網址。
+2. 輸入團務名稱，選擇「單次約團」或「每週固定」。
+3. 建立後按「複製分享連結」，傳給玩家。
+4. 玩家輸入暱稱、日期與 `HH:mm` 格式的時間，例如 `19:30`。
+5. 月曆會自動將相同時間的玩家排列在一起。
+
+## 資料與權限提醒
+
+- 任何取得約團連結的人都能看到該團的名稱、說明、玩家暱稱與時段。
+- 玩家資料與目前瀏覽器的匿名身分綁定；換裝置或清除網站資料後，無法修改舊資料，但可以重新填寫。
+- 團主建立的約團表不會列在公開首頁，必須知道完整分享連結才能進入。
+- 若要停用網站，可在 GitHub Pages 關閉發布；若要刪除資料，可在 Firebase Firestore Console 操作。
