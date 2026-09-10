@@ -21,7 +21,10 @@
 .delete-schedule:hover { color:white; background:var(--red); }
 .delete-schedule:disabled { opacity:.5; cursor:not-allowed; }
 .quick-layout { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(310px,.8fr); gap:16px; align-items:start; }
-.quick-create-form { max-width:760px; margin:0 auto; }
+.quick-create-form { width:100%; max-width:760px; margin:0 auto; }
+.quick-create-form section,.quick-create-form label,.schedule-banner>div { min-width:0; }
+.quick-create-form .form-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); }
+.quick-create-form input,.quick-create-form textarea { min-width:0; max-width:100%; }
 .quick-card { padding:22px; border:1px solid var(--line); border-radius:22px; background:white; box-shadow:var(--shadow); }
 .quick-card h2 { margin:0 0 5px; }
 .quick-card>p { margin:0 0 18px; color:var(--muted); }
@@ -54,10 +57,11 @@
 .schedule-banner { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; padding:24px; margin-bottom:16px; border-radius:22px; color:white; background:#171c30; }
 .schedule-banner h1 { margin:6px 0; font-size:clamp(2rem,5vw,3.3rem); letter-spacing:-.045em; }
 .schedule-banner p { margin:0; color:#cbd0df; }
-.contact-card { min-width:230px; padding:13px; border:1px solid #3a415a; border-radius:13px; background:#22283e; }
+.contact-card { width:min(100%,340px); min-width:230px; flex:0 1 340px; padding:13px; border:1px solid #3a415a; border-radius:13px; background:#22283e; }
 .contact-card span,.contact-card b { display:block; }
 .contact-card span { color:#aeb6cc; font-size:.78rem; }
-.contact-card b { margin-top:5px; overflow-wrap:anywhere; }
+.contact-card b { margin-top:5px; overflow-wrap:anywhere; word-break:break-word; }
+.schedule-banner h1,.schedule-banner p { overflow-wrap:anywhere; }
 .schedule-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(320px,.7fr); gap:16px; align-items:start; }
 .choice-list { display:grid; gap:9px; }
 .period-legend { display:flex; flex-wrap:wrap; gap:7px; margin:0 0 16px; }
@@ -120,7 +124,7 @@
   .quick-day small { display:none; }
   .calendar-player { width:17px; height:17px; font-size:.55rem; }
   .schedule-banner { display:block; padding:19px; }
-  .contact-card { min-width:0; margin-top:15px; }
+  .contact-card { width:100%; min-width:0; margin-top:15px; }
   .choice-row { grid-template-columns:repeat(4,1fr); }
   .choice-date { grid-column:1/-1; }
   .choice-button { min-width:0; }
@@ -133,4 +137,10 @@
   .overview-table td::before { content:attr(data-label); color:var(--muted); text-align:left; }
   .overview-table td:first-child { position:static; display:block; padding-bottom:9px; font-size:1rem; font-weight:850; text-align:left; }
   .overview-table td:first-child::before { display:none; }
+}
+@media (max-width:420px) {
+  .quick-shell { width:calc(100% - 12px); }
+  .quick-card { padding:12px; border-radius:16px; }
+  .quick-create-form .form-grid { gap:11px; }
+  .schedule-banner { padding:15px; border-radius:16px; }
 }
