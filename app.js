@@ -8,7 +8,6 @@ import {
   onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
-import { holidayFor, holidaysInMonth } from "./taiwan-holidays.js?v=20260910-4";
 
 const root = document.querySelector("#app");
 const toastNode = document.querySelector("#toast");
@@ -25,30 +24,12 @@ let auth;
 let db;
 let user = null;
 let role = null;
-let publicEvents = [];
 let adminEvents = [];
-let monthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-let unsubscribePublic = null;
 let unsubscribeAdmin = null;
 let adminEventsLoaded = false;
 
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
-}
-
-function taiwanTodayKey() {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit"
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
-}
-
-function safeUrl(value = "") {
-  try {
-    const url = new URL(value);
-    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
-  } catch { return ""; }
 }
 
 function toast(message) {
@@ -64,10 +45,8 @@ function showError(error, fallback = "操作失敗，請稍後再試。") {
 }
 
 function route() {
-  const game = location.hash.match(/^#game=([A-Za-z0-9]+)$/);
   const poll = location.hash.match(/^#poll=([A-Za-z0-9_-]+)$/);
   if (poll) return { page: "poll", id: poll[1] };
-  if (game) return { page: "game", id: game[1] };
   if (location.hash === "#admin") return { page: "admin" };
   return { page: "home" };
 }
@@ -76,7 +55,7 @@ function nav(active = "home") {
   const isMember = user && !user.isAnonymous;
   return `<header class="topbar">
     <a class="brand" href="#"><span class="brandmark" aria-hidden="true">⚄</span><span>Gather Party<small>TRPG 團務管理</small></span></a>
-    <nav><a class="${active === "home" ? "active" : ""}" href="#">公開團務</a><a href="./quick.html">我的快速約團</a><a class="${active === "admin" ? "active" : ""}" href="#admin">${isMember ? "管理後台" : "管理登入"}</a></nav>
+    <nav><a href="./quick.html">快速約團</a><a class="${active === "admin" ? "active" : ""}" href="#admin">${isMember ? "管理後台" : "管理登入"}</a></nav>
   </header>`;
 }
 
@@ -88,110 +67,20 @@ function formatDate(value) {
   return `${y} 年 ${m} 月 ${d} 日（週${day}）`;
 }
 
-function isPast(event) {
-  if (!event.date) return false;
-  return event.date < new Date().toISOString().slice(0, 10);
-}
-
 function spots(event) {
   const approved = Number(event.approvedCount || 0);
   const capacity = Number(event.capacity || 0);
   return { approved, capacity, remaining: Math.max(0, capacity - approved) };
 }
 
-function eventCard(event, compact = false) {
-  const count = spots(event);
-  const closed = event.registrationClosed || count.remaining === 0 || isPast(event);
-  return `<article class="event-card ${compact ? "compact" : ""}">
-    <div class="event-date"><b>${event.date ? escapeHtml(event.date.slice(8)) : "？"}</b><span>${event.date ? escapeHtml(event.date.slice(0, 7)) : "日期未定"}</span></div>
-    <div class="event-main">
-      <div class="badges"><span class="badge system">${escapeHtml(event.system || "TRPG")}</span><span class="badge ${closed ? "closed" : "open"}">${closed ? "報名關閉" : `尚有 ${count.remaining} 名`}</span></div>
-      <h3>${escapeHtml(event.title)}</h3>
-      <p>${escapeHtml(event.scenario || "劇本未填")}・GM ${escapeHtml(event.gm || "未填")}</p>
-      <div class="event-meta"><span>◷ ${escapeHtml(event.time || "時間未定")}</span><span>⌖ ${escapeHtml(event.location || "地點未定")}</span><span>♙ ${count.approved}／${count.capacity} 人</span></div>
-    </div>
-    <a class="button secondary" href="#game=${event.id}">查看團務</a>
-  </article>`;
-}
-
-function calendarHtml() {
-  const year = monthCursor.getFullYear();
-  const month = monthCursor.getMonth();
-  const first = (new Date(year, month, 1).getDay() + 6) % 7;
-  const total = new Date(year, month + 1, 0).getDate();
-  const today = taiwanTodayKey();
-  const cells = [];
-  for (let i = 0; i < first; i++) cells.push('<div class="calendar-day outside"></div>');
-  for (let day = 1; day <= total; day++) {
-    const date = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    const events = publicEvents.filter(item => item.date === date);
-    const holiday = holidayFor(date);
-    cells.push(`<div class="calendar-day ${holiday ? "holiday" : ""} ${date === today ? "today" : ""}"><button class="day-create" type="button" data-date="${date}" title="在 ${date} 建立團務"><span class="day-number">${day}</span><span class="add-day">＋</span></button>${holiday ? `<small class="holiday-name">${escapeHtml(holiday)}</small>` : ""}<div class="day-events">${events.map(item => `<a class="calendar-event ${item.registrationClosed ? "closed" : ""}" href="#game=${item.id}"><small>${escapeHtml(item.time || "未定")}</small><span>${escapeHtml(item.title)}</span></a>`).join("")}</div></div>`);
-  }
-  while (cells.length % 7) cells.push('<div class="calendar-day outside"></div>');
-  return `<div class="calendar-scroll"><div class="calendar"><div class="weekday">一</div><div class="weekday">二</div><div class="weekday">三</div><div class="weekday">四</div><div class="weekday">五</div><div class="weekday weekend">六</div><div class="weekday weekend">日</div>${cells.join("")}</div></div>`;
-}
-
 function renderHome() {
-  const year = monthCursor.getFullYear();
-  const month = monthCursor.getMonth() + 1;
-  const upcoming = publicEvents.filter(item => !isPast(item)).sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
-  const holidays = holidaysInMonth(year, month);
   root.innerHTML = `<main class="shell">${nav("home")}
-    <section class="page-head"><div><span class="eyebrow">PUBLIC SCHEDULE</span><h1>跑團月曆</h1><p>點選月曆日期即可建立團務；尚未登入時會先帶你前往管理登入。</p></div><div class="view-actions"><button class="button secondary" id="prev-month" aria-label="上個月">‹</button><button class="button secondary" id="today-month">今天</button><button class="button secondary" id="next-month" aria-label="下個月">›</button></div></section>
-    <section class="calendar-panel"><h2>${year} 年 ${month} 月</h2>${calendarHtml()}${holidays.length ? `<div class="holiday-reminders"><b>本月放假提醒</b>${holidays.map(item => `<span>${escapeHtml(item.date.slice(5).replace("-", "/"))}　${escapeHtml(item.name)}</span>`).join("")}</div>` : ""}</section>
-    <section class="section"><div class="section-title"><h2>近期團務</h2><span>${upcoming.length} 場公開團務</span></div><div class="event-list">${upcoming.length ? upcoming.map(item => eventCard(item)).join("") : '<div class="empty">目前沒有公開團務。</div>'}</div></section>
-    <footer>需要管理團務？<a href="#admin">前往 GM／管理員後台</a></footer>
+    <section class="portal-head"><span class="eyebrow">GATHER PARTY</span><h1>選擇要使用的功能</h1><p>建立約團調查，或登入後台管理資料。</p></section>
+    <section class="portal-grid" aria-label="主要功能">
+      <a class="portal-card quick" href="./quick.html"><span class="portal-icon" aria-hidden="true">⚄</span><div><h2>快速約團</h2><p>建立連結，讓玩家從月曆填寫可跑日期與時段。</p><b>前往快速約團 →</b></div></a>
+      <a class="portal-card admin" href="#admin"><span class="portal-icon" aria-hidden="true">⌘</span><div><h2>管理後台</h2><p>管理團務資料、申請、時間調查與所有快速約團表。</p><b>${isMember ? "進入管理後台" : "登入管理後台"} →</b></div></a>
+    </section>
   </main>`;
-  document.querySelector("#prev-month").onclick = () => { monthCursor = new Date(year, month - 2, 1); renderHome(); };
-  document.querySelector("#next-month").onclick = () => { monthCursor = new Date(year, month, 1); renderHome(); };
-  document.querySelector("#today-month").onclick = () => { monthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1); renderHome(); };
-  document.querySelectorAll(".day-create[data-date]").forEach(button => button.onclick = () => {
-    sessionStorage.setItem("gather-party-create-date", button.dataset.date);
-    location.hash = "admin";
-  });
-}
-
-async function renderGame(id) {
-  root.innerHTML = '<main class="loading-screen"><div class="spinner"></div><p>正在讀取團務⋯</p></main>';
-  try {
-    const snap = await getDoc(doc(db, "managedEvents", id));
-    if (!snap.exists()) throw new Error("找不到這場團務。");
-    const event = { id: snap.id, ...snap.data() };
-    const count = spots(event);
-    const closed = event.registrationClosed || count.remaining === 0 || isPast(event);
-    const link = safeUrl(event.externalLink);
-    root.innerHTML = `<main class="shell narrow">${nav()}
-      <a class="back" href="#">← 回到跑團月曆</a>
-      <article class="detail-card">
-        <div class="detail-head"><div><div class="badges"><span class="badge system">${escapeHtml(event.system || "TRPG")}</span><span class="badge ${closed ? "closed" : "open"}">${closed ? "報名關閉" : "開放報名"}</span></div><h1>${escapeHtml(event.title)}</h1><p>${escapeHtml(event.scenario || "劇本未填")}</p></div><div class="capacity"><b>${count.remaining}</b><span>剩餘名額</span></div></div>
-        <dl class="detail-grid"><div><dt>日期</dt><dd>${escapeHtml(formatDate(event.date))}</dd></div><div><dt>時間</dt><dd>${escapeHtml(event.time || "時間未定")}</dd></div><div><dt>主持人</dt><dd>${escapeHtml(event.gm || "未填")}</dd></div><div><dt>人數</dt><dd>${count.approved}／${count.capacity} 人</dd></div><div><dt>地點</dt><dd>${escapeHtml(event.location || "地點未定")}</dd></div><div><dt>系統</dt><dd>${escapeHtml(event.system || "未填")}</dd></div><div><dt>建立者／統計者</dt><dd>${escapeHtml(event.coordinator || "未填")}</dd></div><div><dt>玩家聯絡方式</dt><dd>${escapeHtml(event.publicContact || "未提供")}</dd></div></dl>
-        ${event.description ? `<section class="description"><h2>團務說明</h2><p>${escapeHtml(event.description)}</p></section>` : ""}
-        ${link ? `<a class="button secondary external" href="${escapeHtml(link)}" target="_blank" rel="noreferrer">開啟相關連結 ↗</a>` : ""}
-      </article>
-      <section class="join-card"><h2>${closed ? "本團目前不接受申請" : "申請加入這場團"}</h2>${closed ? '<p class="muted">名額已滿、報名已關閉，或團務日期已結束。</p>' : `
-        <form id="join-form"><div class="form-grid"><label>玩家名稱<input name="playerName" maxlength="30" required></label><label>聯絡方式<input name="contact" maxlength="100" placeholder="Discord、LINE 或 Email" required></label></div><label>想對 GM 說的話<textarea name="note" maxlength="500" placeholder="角色概念、跑團經驗或其他備註（選填）"></textarea></label><button class="button" type="submit">送出加團申請</button></form>`}</section>
-    </main>`;
-    document.querySelector("#join-form")?.addEventListener("submit", async e => {
-      e.preventDefault();
-      const form = e.currentTarget;
-      const button = form.querySelector("button");
-      button.disabled = true;
-      try {
-        await addDoc(collection(db, "managedEvents", id, "joinRequests"), {
-          applicantUid: user.uid,
-          playerName: form.playerName.value.trim(),
-          contact: form.contact.value.trim(),
-          note: form.note.value.trim(),
-          status: "pending",
-          createdAt: serverTimestamp()
-        });
-        form.innerHTML = '<div class="success-box"><b>申請已送出</b><span>GM 審核後會透過你留下的方式聯絡。</span></div>';
-      } catch (error) { showError(error, "申請送出失敗。"); button.disabled = false; }
-    });
-  } catch (error) {
-    root.innerHTML = `<main class="error-screen"><h1>無法開啟團務</h1><p>${escapeHtml(error.message)}</p><a class="button" href="#">回首頁</a></main>`;
-  }
 }
 
 async function getRole(account) {
@@ -206,7 +95,7 @@ async function getRole(account) {
 }
 
 function renderLogin(message = "") {
-  root.innerHTML = `<main class="shell narrow">${nav("admin")}<section class="login-card"><span class="brandmark">⚄</span><h1>團務管理登入</h1><p>你可以只是建立者或統計者，不必是這場團的實際 GM。</p><form id="login-form"><label>Email<input name="email" type="email" autocomplete="email" required></label><label>密碼<input name="password" type="password" autocomplete="current-password" required></label><p class="form-message">${escapeHtml(message)}</p><button class="button full" type="submit">登入管理後台</button></form><a href="#">← 回公開月曆</a></section></main>`;
+  root.innerHTML = `<main class="shell narrow">${nav("admin")}<section class="login-card"><span class="brandmark">⚄</span><h1>團務管理登入</h1><p>你可以只是建立者或統計者，不必是這場團的實際 GM。</p><form id="login-form"><label>Email<input name="email" type="email" autocomplete="email" required></label><label>密碼<input name="password" type="password" autocomplete="current-password" required></label><p class="form-message">${escapeHtml(message)}</p><button class="button full" type="submit">登入管理後台</button></form><a href="#">← 回首頁</a></section></main>`;
   document.querySelector("#login-form").addEventListener("submit", async e => {
     e.preventDefault();
     const button = e.currentTarget.querySelector("button");
@@ -620,7 +509,6 @@ async function renderPlayerPoll(token) {
 async function handleRoute() {
   const current = route();
   if (current.page === "poll") return renderPlayerPoll(current.id);
-  if (current.page === "game") return renderGame(current.id);
   if (current.page === "admin") {
     if (!user || user.isAnonymous) return renderLogin();
     role = await getRole(user);
@@ -638,12 +526,6 @@ async function start() {
   onAuthStateChanged(auth, async account => {
     user = account;
     if (!user) return signInAnonymously(auth);
-    unsubscribePublic?.();
-    const publicQuery = query(collection(db, "managedEvents"), where("hidden", "==", false));
-    unsubscribePublic = onSnapshot(publicQuery, snap => {
-      publicEvents = snap.docs.map(item => ({ id: item.id, ...item.data() }));
-      if (["home"].includes(route().page)) renderHome();
-    }, error => showError(error, "無法載入公開團務。"));
     await handleRoute();
   });
   window.addEventListener("hashchange", handleRoute);
