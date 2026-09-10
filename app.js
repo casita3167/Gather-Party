@@ -68,7 +68,7 @@ function nav(active = "home") {
   const isMember = user && !user.isAnonymous;
   return `<header class="topbar">
     <a class="brand" href="#"><span class="brandmark" aria-hidden="true">⚄</span><span>Gather Party<small>TRPG 團務管理</small></span></a>
-    <nav><a class="${active === "home" ? "active" : ""}" href="#">公開團務</a><a href="./quick.html">快速約團</a><a class="${active === "admin" ? "active" : ""}" href="#admin">${isMember ? "管理後台" : "管理登入"}</a></nav>
+    <nav><a class="${active === "home" ? "active" : ""}" href="#">公開團務</a><a href="./quick.html">我的快速約團</a><a class="${active === "admin" ? "active" : ""}" href="#admin">${isMember ? "管理後台" : "管理登入"}</a></nav>
   </header>`;
 }
 
