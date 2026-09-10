@@ -25,6 +25,8 @@ Gather Party 是部署在 GitHub Pages 的 Firebase 團務管理網站。公開�
 - 自動整理可成團時段、全員皆可時段與所有玩家的一覽表。
 - 「我的快速約團表」會列出這台裝置建立的約團表，建立者不需要 GM 權限即可找回。
 - 建立者可刪除自己的快速約團表；刪除時會一併移除玩家填寫資料。
+- 建立時會產生一條私人管理連結；建立者可在其他裝置用這條連結取回管理與刪除權限。
+- 玩家填表連結與私人管理連結分開，請勿將私人管理連結傳給玩家。
 
 ### GM／管理員後台
 
@@ -38,6 +40,7 @@ Gather Party 是部署在 GitHub Pages 的 Firebase 團務管理網站。公開�
 - 每位玩家會取得獨立的 192-bit 隨機私人連結。
 - 顯示玩家填寫狀態、全員共同時段及多數可跑時段。
 - 清除調查後，所有舊玩家連結會立即失效。
+- `admins` 後台可查看、開啟及刪除所有快速約團表；GM 不會看到其他人的快速約團。
 
 ## 第一次啟用
 
@@ -120,6 +123,8 @@ Gather Party 是部署在 GitHub Pages 的 Firebase 團務管理網站。公開�
 - `pollPlayers`：以私人 token 作為文件 ID 的玩家調查資料。
 - `quickSchedules`：快速約團主檔。
 - `quickSchedules/{scheduleId}/responses`：玩家的快速約團選擇與備註。
+- `quickSchedules/{scheduleId}/managementTokens`：不可公開列出的私人管理密鑰。
+- `quickSchedules/{scheduleId}/managers`：曾透過私人連結取得權限的匿名裝置。
 - `admins`、`gms`：管理權限名單。
 - `events`：舊版快速約團資料，與新版資料分開保存。
 
