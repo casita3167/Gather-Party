@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/fireba
 import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import {
   addDoc, collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot,
-  query, serverTimestamp, setDoc, where
+  query, serverTimestamp, setDoc, updateDoc, where
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { holidayFor } from "./taiwan-holidays.js?v=20260910-4";
@@ -11,6 +11,7 @@ const root = document.querySelector("#app");
 const toastNode = document.querySelector("#toast");
 const DAY_NAMES = ["日", "一", "二", "三", "四", "五", "六"];
 const PERIOD_KEYS = ["早上", "下午", "晚上"];
+const SHORTENER_URL = "https://gather-party-link.gather-party.workers.dev";
 
 let auth;
 let db;
@@ -23,6 +24,7 @@ let choices = new Map();
 let unsubscribeResponses = null;
 let canManageSchedule = false;
 let managementToken = "";
+let managementShortUrl = "";
 
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
@@ -65,6 +67,17 @@ function quickUrl(id) {
 
 function manageUrl(id, token) {
   return `${new URL("./quick.html", location.href).href.split("#")[0]}#manage=${id}.${token}`;
+}
+
+async function createShortUrl(target, type) {
+  const response = await fetch(`${SHORTENER_URL}/api/shorten`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target, type })
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.shortUrl) throw new Error(result.error || "短網址建立失敗");
+  return result.shortUrl;
 }
 
 function dateLabel(date, short = false) {
@@ -207,7 +220,21 @@ async function createSchedule(event) {
       },
       createdAt: serverTimestamp()
     });
-    await setDoc(doc(db, "quickSchedules", ref.id, "managementTokens", token), { createdAt: serverTimestamp() });
+    let playerShortUrl = "";
+    let managerShortUrl = "";
+    try {
+      [playerShortUrl, managerShortUrl] = await Promise.all([
+        createShortUrl(quickUrl(ref.id), "player"),
+        createShortUrl(manageUrl(ref.id, token), "manager")
+      ]);
+    } catch (shortenerError) {
+      console.error(shortenerError);
+    }
+    await setDoc(doc(db, "quickSchedules", ref.id, "managementTokens", token), {
+      createdAt: serverTimestamp(),
+      ...(managerShortUrl ? { shortUrl: managerShortUrl } : {})
+    });
+    if (playerShortUrl) await updateDoc(ref, { shortPlayerUrl: playerShortUrl });
     location.hash = `manage=${ref.id}.${token}`;
   } catch (error) {
     console.error(error);
@@ -225,6 +252,7 @@ async function openSchedule(id) {
     if (!snap.exists()) throw new Error("找不到這張快速約團表。");
     schedule = { id: snap.id, ...snap.data() };
     await loadManagementAccess();
+    await ensureShortLinks();
     const mine = await getDoc(doc(db, "quickSchedules", id, "responses", user.uid));
     const mineData = mine.exists() ? mine.data() : null;
     choices = new Map(schedule.dates.map(date => [date, new Set(mineData?.choices?.[date] || [])]));
@@ -260,6 +288,7 @@ async function claimManagementAccess(id, token) {
 async function loadManagementAccess() {
   canManageSchedule = schedule.ownerUid === user.uid;
   managementToken = "";
+  managementShortUrl = "";
   try {
     if (!canManageSchedule) {
       const claim = await getDoc(doc(db, "quickSchedules", schedule.id, "managers", user.uid));
@@ -269,6 +298,7 @@ async function loadManagementAccess() {
     if (canManageSchedule && !managementToken) {
       const tokens = await getDocs(collection(db, "quickSchedules", schedule.id, "managementTokens"));
       managementToken = tokens.docs[0]?.id || "";
+      managementShortUrl = tokens.docs[0]?.data()?.shortUrl || "";
       if (!managementToken && schedule.ownerUid === user.uid) {
         managementToken = randomManagementToken();
         await setDoc(doc(db, "quickSchedules", schedule.id, "managementTokens", managementToken), { createdAt: serverTimestamp() });
@@ -280,18 +310,43 @@ async function loadManagementAccess() {
   }
 }
 
+async function ensureShortLinks() {
+  if (!canManageSchedule || !managementToken) return;
+  try {
+    const playerPromise = schedule.shortPlayerUrl
+      ? Promise.resolve(schedule.shortPlayerUrl)
+      : createShortUrl(quickUrl(schedule.id), "player");
+    const managerPromise = managementShortUrl
+      ? Promise.resolve(managementShortUrl)
+      : createShortUrl(manageUrl(schedule.id, managementToken), "manager");
+    const [playerShortUrl, managerShortUrl] = await Promise.all([playerPromise, managerPromise]);
+    if (!schedule.shortPlayerUrl) {
+      await updateDoc(doc(db, "quickSchedules", schedule.id), { shortPlayerUrl: playerShortUrl });
+      schedule.shortPlayerUrl = playerShortUrl;
+    }
+    if (!managementShortUrl) {
+      await setDoc(doc(db, "quickSchedules", schedule.id, "managementTokens", managementToken), {
+        shortUrl: managerShortUrl
+      }, { merge: true });
+      managementShortUrl = managerShortUrl;
+    }
+  } catch (error) {
+    console.error("短網址建立失敗，暫時使用原始網址。", error);
+  }
+}
+
 function renderSchedule(mineData) {
   const periodRanges = schedule.periods || {};
   const submitted = responses.filter(item => item.submitted);
   const best = bestSlots(submitted);
-  const playerLink = quickUrl(schedule.id);
-  const privateLink = managementToken ? manageUrl(schedule.id, managementToken) : "";
+  const playerLink = schedule.shortPlayerUrl || quickUrl(schedule.id);
+  const privateLink = managementToken ? (managementShortUrl || manageUrl(schedule.id, managementToken)) : "";
   root.innerHTML = `<main class="quick-shell">${brand()}
     <a class="quick-back" href="./quick.html" aria-label="回到建立快速約團頁面">← 上一頁：建立快速約團</a>
     <section class="schedule-banner"><div><span class="eyebrow">QUICK SCHEDULER</span><h1>${escapeHtml(schedule.title)}</h1><p>建立者／統計者：${escapeHtml(schedule.coordinatorName)}${schedule.gmName ? `・實際 GM：${escapeHtml(schedule.gmName)}` : ""}</p></div>${schedule.contact ? `<div class="contact-card"><span>給玩家的聯絡方式</span><b>${escapeHtml(schedule.contact)}</b></div>` : ""}</section>
     ${schedule.note ? `<p class="quick-note">${escapeHtml(schedule.note)}</p>` : ""}
     <div class="schedule-grid"><form id="response-form" class="quick-card"><h2>填寫我的時間</h2><p>同一天可複選早、中、晚；整天都不行請選 X。儲存後仍可隨時回來修改。</p>${periodLegendMarkup(periodRanges)}<label>玩家名稱<input name="playerName" maxlength="30" value="${escapeHtml(mineData?.playerName || localStorage.getItem("gather-party-player") || "")}" required></label><div class="choice-list">${schedule.dates.map(date => choiceRow(date, periodRanges)).join("")}</div><label>備註<textarea name="note" maxlength="500" placeholder="例如：晚上九點後才有空、這天可能需要再確認">${escapeHtml(mineData?.note || "")}</textarea></label><div class="quick-form-actions"><span class="muted">每個日期都要選擇至少一個選項</span><button class="button" type="submit">${mineData?.submitted ? "儲存變更" : "儲存我的時間"}</button></div></form>
-      <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${submitted.length} 人已填寫・填表人數不限・${schedule.minPlayers} 人同時有空即達門檻</p><div class="best-slots" id="best-slots">${bestMarkup(best, submitted.length)}</div><label>玩家填表連結<small class="random-link-note">每張約團表都使用獨立的隨機網址代碼。</small><div class="share-box"><input id="player-link" readonly value="${escapeHtml(playerLink)}"><button class="button secondary" id="copy-quick" type="button">複製</button></div></label>${canManageSchedule ? `<div class="management-box"><h3>私人管理連結</h3><p>換裝置時用這條連結取回管理權限。此連結另含獨立隨機密鑰，請勿傳給玩家。</p>${privateLink ? `<div class="share-box"><input id="manager-link" readonly value="${escapeHtml(privateLink)}"><button class="button secondary" id="copy-manager" type="button">複製</button></div>` : '<p class="muted">發布新版 Firestore Rules 後即可產生。</p>'}<button class="button reject full" id="delete-current-schedule" type="button">刪除這張約團表</button></div>` : ""}</aside>
+      <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${submitted.length} 人已填寫・填表人數不限・${schedule.minPlayers} 人同時有空即達門檻</p><div class="best-slots" id="best-slots">${bestMarkup(best, submitted.length)}</div><label>玩家填表連結<small class="random-link-note">使用 Cloudflare 隨機短網址，不會顯示 GitHub 名稱。</small><div class="share-box"><input id="player-link" readonly value="${escapeHtml(playerLink)}"><button class="button secondary" id="copy-quick" type="button">複製</button></div></label>${canManageSchedule ? `<div class="management-box"><h3>私人管理連結</h3><p>換裝置時用這條隨機短網址取回管理權限，請勿傳給玩家。</p>${privateLink ? `<div class="share-box"><input id="manager-link" readonly value="${escapeHtml(privateLink)}"><button class="button secondary" id="copy-manager" type="button">複製</button></div>` : '<p class="muted">發布新版 Firestore Rules 後即可產生。</p>'}<button class="button reject full" id="delete-current-schedule" type="button">刪除這張約團表</button></div>` : ""}</aside>
     </div>
     <section class="quick-card overview"><h2>玩家時間一覽</h2><p>每位玩家的選擇與備註會集中顯示在這裡。</p>${periodLegendMarkup(periodRanges)}<div id="overview-content">${overviewMarkup(submitted)}</div></section>
   </main>`;
@@ -420,6 +475,7 @@ async function handleRoute() {
     schedule = null;
     canManageSchedule = false;
     managementToken = "";
+    managementShortUrl = "";
     unsubscribeResponses?.();
     unsubscribeResponses = null;
     renderCreate();
