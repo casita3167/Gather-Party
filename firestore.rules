@@ -2,9 +2,41 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isStaff() {
+      return signedIn()
+        && (exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+          || exists(/databases/$(database)/documents/gms/$(request.auth.uid)));
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function managesEvent(eventId) {
+      return isAdmin()
+        || (signedIn()
+          && get(/databases/$(database)/documents/managedEvents/$(eventId)).data.ownerUid == request.auth.uid);
+    }
+
+    match /admins/{userId} {
+      allow get: if signedIn() && request.auth.uid == userId;
+      allow list, write: if isAdmin();
+    }
+
+    match /gms/{userId} {
+      allow get: if signedIn() && request.auth.uid == userId;
+      allow list, write: if isAdmin();
+    }
+
+    // 舊版 Firebase 快速約團資料，保留原本讀寫方式。
     match /events/{eventId} {
       allow read: if true;
-      allow create: if request.auth != null
+      allow create: if signedIn()
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.title is string
         && request.resource.data.title.size() >= 1
@@ -15,12 +47,11 @@ service cloud.firestore {
         && request.resource.data.minPlayers is int
         && request.resource.data.minPlayers >= 2
         && request.resource.data.minPlayers <= 20;
-      allow update, delete: if request.auth != null
-        && resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
 
       match /availability/{userId} {
         allow read: if true;
-        allow create, update: if request.auth != null
+        allow create, update: if signedIn()
           && request.auth.uid == userId
           && request.resource.data.name is string
           && request.resource.data.name.size() >= 1
@@ -28,9 +59,86 @@ service cloud.firestore {
           && request.resource.data.slots is list
           && request.resource.data.slots.size() >= 1
           && request.resource.data.slots.size() <= 30;
-        allow delete: if request.auth != null
-          && request.auth.uid == userId;
+        allow delete: if signedIn() && request.auth.uid == userId;
       }
+    }
+
+    match /managedEvents/{eventId} {
+      allow get: if resource.data.hidden == false || isAdmin()
+        || (isStaff() && resource.data.ownerUid == request.auth.uid);
+      allow list: if resource.data.hidden == false || isAdmin()
+        || (isStaff() && resource.data.ownerUid == request.auth.uid);
+      allow create: if isStaff()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 1
+        && request.resource.data.title.size() <= 80
+        && request.resource.data.capacity is int
+        && request.resource.data.capacity >= 1
+        && request.resource.data.capacity <= 30
+        && request.resource.data.approvedCount == 0
+        && request.resource.data.hidden is bool
+        && request.resource.data.registrationClosed is bool;
+      allow update: if (isAdmin()
+          || (isStaff() && resource.data.ownerUid == request.auth.uid))
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.capacity is int
+        && request.resource.data.capacity >= 1
+        && request.resource.data.capacity <= 30
+        && request.resource.data.approvedCount is int
+        && request.resource.data.approvedCount >= 0
+        && request.resource.data.approvedCount <= request.resource.data.capacity
+        && request.resource.data.hidden is bool
+        && request.resource.data.registrationClosed is bool;
+      allow delete: if isAdmin()
+        || (isStaff() && resource.data.ownerUid == request.auth.uid);
+
+      match /joinRequests/{requestId} {
+        allow create: if signedIn()
+          && get(/databases/$(database)/documents/managedEvents/$(eventId)).data.hidden == false
+          && get(/databases/$(database)/documents/managedEvents/$(eventId)).data.registrationClosed == false
+          && get(/databases/$(database)/documents/managedEvents/$(eventId)).data.approvedCount
+            < get(/databases/$(database)/documents/managedEvents/$(eventId)).data.capacity
+          && request.resource.data.applicantUid == request.auth.uid
+          && request.resource.data.playerName is string
+          && request.resource.data.playerName.size() >= 1
+          && request.resource.data.playerName.size() <= 30
+          && request.resource.data.contact is string
+          && request.resource.data.contact.size() >= 1
+          && request.resource.data.contact.size() <= 100
+          && request.resource.data.note is string
+          && request.resource.data.note.size() <= 500
+          && request.resource.data.status == 'pending';
+        allow read, update, delete: if managesEvent(eventId);
+      }
+
+      match /polls/{pollId} {
+        allow read, create, update, delete: if managesEvent(eventId);
+      }
+    }
+
+    // 文件 ID 本身是 192-bit 隨機私人 token；禁止訪客列出整個集合。
+    match /pollPlayers/{token} {
+      allow get: if true;
+      allow list: if isAdmin()
+        || (isStaff() && resource.data.ownerUid == request.auth.uid);
+      allow create: if isStaff()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.playerName is string
+        && request.resource.data.playerName.size() >= 1
+        && request.resource.data.playerName.size() <= 40
+        && request.resource.data.dates is list
+        && request.resource.data.dates.size() >= 1
+        && request.resource.data.dates.size() <= 31
+        && request.resource.data.slots is list
+        && request.resource.data.slots.size() == 0;
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['slots', 'submitted', 'updatedAt'])
+        && request.resource.data.slots is list
+        && request.resource.data.slots.size() <= 155
+        && request.resource.data.submitted is bool;
+      allow delete: if isAdmin()
+        || (isStaff() && resource.data.ownerUid == request.auth.uid);
     }
   }
 }

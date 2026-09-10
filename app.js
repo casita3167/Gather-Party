@@ -1,464 +1,582 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
-import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
-import { addDoc, collection, deleteDoc, doc, getDoc, getFirestore, onSnapshot, serverTimestamp, setDoc } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+import {
+  getAuth, onAuthStateChanged, signInAnonymously,
+  signInWithEmailAndPassword, signOut
+} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+import {
+  addDoc, collection, deleteDoc, doc, getDoc, getDocs, getFirestore,
+  onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch
+} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 const root = document.querySelector("#app");
 const toastNode = document.querySelector("#toast");
-const DAYS = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"];
-const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+const PERIODS = [
+  ["全天", "整天皆可"],
+  ["早上", "08:00～12:00"],
+  ["下午", "14:00～18:00"],
+  ["晚上", "20:00～24:00"],
+  ["時間由GM決定", "由 GM 決定實際時間"]
+];
+const JOIN_STATUS = { pending: "待處理", approved: "核准", rejected: "婉拒" };
+
 let auth;
 let db;
-let user;
-let currentEvent = null;
-let availability = [];
-let draftSlots = [];
-let unsubscribe = null;
-let editorInitialized = false;
-let calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let user = null;
+let role = null;
+let publicEvents = [];
+let adminEvents = [];
+let monthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let unsubscribePublic = null;
+let unsubscribeAdmin = null;
 
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
+}
+
+function safeUrl(value = "") {
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+  } catch { return ""; }
 }
 
 function toast(message) {
   toastNode.textContent = message;
   toastNode.classList.add("show");
   clearTimeout(toastNode.timer);
-  toastNode.timer = setTimeout(() => toastNode.classList.remove("show"), 1800);
+  toastNode.timer = setTimeout(() => toastNode.classList.remove("show"), 2200);
 }
 
-function isConfigured() {
-  return firebaseConfig.apiKey && !firebaseConfig.apiKey.includes("PASTE_") && firebaseConfig.projectId && !firebaseConfig.projectId.includes("PASTE_");
+function showError(error, fallback = "操作失敗，請稍後再試。") {
+  console.error(error);
+  toast(error?.code === "permission-denied" ? "你沒有執行這項操作的權限。" : fallback);
 }
 
-function setupScreen() {
-  root.innerHTML = `<main class="card setup-card"><div class="brandmark" aria-hidden="true">⚄</div><h1>還差 Firebase 設定</h1><p>網頁檔案已經可以使用，但還需要連上你的 Firebase 專案，才能讓不同玩家共同填寫。</p><ol><li>依照 <code>README.md</code> 建立 Firebase 專案。</li><li>把網頁設定貼進 <code>firebase-config.js</code>。</li><li>重新上傳 GitHub 後再開啟這個頁面。</li></ol><p><a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer">前往 Firebase Console</a></p></main>`;
+function route() {
+  const game = location.hash.match(/^#game=([A-Za-z0-9]+)$/);
+  const poll = location.hash.match(/^#poll=([A-Za-z0-9_-]+)$/);
+  if (poll) return { page: "poll", id: poll[1] };
+  if (game) return { page: "game", id: game[1] };
+  if (location.hash === "#admin") return { page: "admin" };
+  return { page: "home" };
 }
 
-function brandBar(withShare = false) {
-  return `<header class="brandbar"><a class="brand" href="#"><span class="brandmark" aria-hidden="true">⚄</span><span>約團時間表<small>不用註冊，貼連結就能一起填</small></span></a>${withShare ? '<button class="button secondary" id="copy-link" type="button">複製分享連結</button>' : ""}</header>`;
+function nav(active = "home") {
+  const isMember = user && !user.isAnonymous;
+  return `<header class="topbar">
+    <a class="brand" href="#"><span class="brandmark" aria-hidden="true">⚄</span><span>Gather Party<small>TRPG 團務管理</small></span></a>
+    <nav><a class="${active === "home" ? "active" : ""}" href="#">公開團務</a><a href="./legacy.html">快速約時間</a><a class="${active === "admin" ? "active" : ""}" href="#admin">${isMember ? "管理後台" : "GM 登入"}</a></nav>
+  </header>`;
 }
 
-function newSlot(kind) {
-  return kind === "weekly" ? { weekday: 5, time: "19:00" } : { date: "", time: "19:00" };
+function formatDate(value) {
+  if (!value) return "日期未定";
+  const [y, m, d] = value.split("-").map(Number);
+  if (!y || !m || !d) return value;
+  const day = ["日", "一", "二", "三", "四", "五", "六"][new Date(y, m - 1, d).getDay()];
+  return `${y} 年 ${m} 月 ${d} 日（週${day}）`;
 }
 
-function normalizeSlot(slot, kind) {
-  if (kind === "weekly") return { weekday: Number(slot.weekday ?? 5), time: slot.time || slot.startTime || "19:00" };
-  return { date: slot.date || slot.start?.slice(0, 10) || "", time: slot.time || slot.start?.slice(11, 16) || "19:00" };
+function isPast(event) {
+  if (!event.date) return false;
+  return event.date < new Date().toISOString().slice(0, 10);
 }
 
-function normalizeTimeValue(value, final = false) {
-  const digits = String(value || "").replace(/\D/g, "").slice(0, 4);
-  if (digits.length === 4) return `${digits.slice(0, 2)}:${digits.slice(2)}`;
-  if (final && digits.length === 3) return `0${digits[0]}:${digits.slice(1)}`;
-  if (final && digits.length > 0 && digits.length <= 2 && Number(digits) <= 23) return `${digits.padStart(2, "0")}:00`;
-  return digits;
+function spots(event) {
+  const approved = Number(event.approvedCount || 0);
+  const capacity = Number(event.capacity || 0);
+  return { approved, capacity, remaining: Math.max(0, capacity - approved) };
 }
 
-function handleTimeTyping(event) {
-  event.currentTarget.value = normalizeTimeValue(event.currentTarget.value);
-  syncDraftInputs();
+function eventCard(event, compact = false) {
+  const count = spots(event);
+  const closed = event.registrationClosed || count.remaining === 0 || isPast(event);
+  return `<article class="event-card ${compact ? "compact" : ""}">
+    <div class="event-date"><b>${event.date ? escapeHtml(event.date.slice(8)) : "？"}</b><span>${event.date ? escapeHtml(event.date.slice(0, 7)) : "日期未定"}</span></div>
+    <div class="event-main">
+      <div class="badges"><span class="badge system">${escapeHtml(event.system || "TRPG")}</span><span class="badge ${closed ? "closed" : "open"}">${closed ? "報名關閉" : `尚有 ${count.remaining} 名`}</span></div>
+      <h3>${escapeHtml(event.title)}</h3>
+      <p>${escapeHtml(event.scenario || "劇本未填")}・GM ${escapeHtml(event.gm || "未填")}</p>
+      <div class="event-meta"><span>◷ ${escapeHtml(event.time || "時間未定")}</span><span>⌖ ${escapeHtml(event.location || "地點未定")}</span><span>♙ ${count.approved}／${count.capacity} 人</span></div>
+    </div>
+    <a class="button secondary" href="#game=${event.id}">查看團務</a>
+  </article>`;
 }
 
-function finishTimeTyping(event) {
-  event.currentTarget.value = normalizeTimeValue(event.currentTarget.value, true);
-  syncDraftInputs();
+function calendarHtml() {
+  const year = monthCursor.getFullYear();
+  const month = monthCursor.getMonth();
+  const first = (new Date(year, month, 1).getDay() + 6) % 7;
+  const total = new Date(year, month + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < first; i++) cells.push('<div class="calendar-day outside"></div>');
+  for (let day = 1; day <= total; day++) {
+    const date = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const events = publicEvents.filter(item => item.date === date);
+    cells.push(`<div class="calendar-day"><span class="day-number">${day}</span><div class="day-events">${events.map(item => `<a class="calendar-event ${item.registrationClosed ? "closed" : ""}" href="#game=${item.id}"><small>${escapeHtml(item.time || "未定")}</small>${escapeHtml(item.title)}</a>`).join("")}</div></div>`);
+  }
+  while (cells.length % 7) cells.push('<div class="calendar-day outside"></div>');
+  return `<div class="calendar-scroll"><div class="calendar"><div class="weekday">一</div><div class="weekday">二</div><div class="weekday">三</div><div class="weekday">四</div><div class="weekday">五</div><div class="weekday weekend">六</div><div class="weekday weekend">日</div>${cells.join("")}</div></div>`;
 }
 
 function renderHome() {
-  currentEvent = null;
-  availability = [];
-  if (unsubscribe) unsubscribe();
-  unsubscribe = null;
-  root.innerHTML = `<main class="shell">${brandBar()}<div class="home-grid">
-    <section class="intro"><span class="eyebrow">◷ 幾分鐘內決定開團時間</span><h1>把大家有空的時間，<span>收在同一張表。</span></h1><p>建立團務後分享連結，玩家只要填暱稱與可行時間。月曆會將相同時間的玩家排在一起。</p><div class="feature-row"><div class="mini-card"><b>單次約團</b><span>適合短團、單次聚會與臨時團</span></div><div class="mini-card"><b>每週固定</b><span>適合長團與固定週期的團務</span></div></div></section>
-    <form class="card create-card" id="create-form"><h2 class="card-title">建立新的約團表</h2><p class="card-sub">建立後就會取得可分享的專屬連結</p>
-      <div class="field"><label for="event-title">團務名稱</label><input id="event-title" name="title" maxlength="60" required placeholder="例如：團務 一"></div>
-      <div class="field"><span class="field-label">安排方式</span><div class="segment"><input id="kind-single" type="radio" name="kind" value="single" checked><label for="kind-single">單次約團</label><input id="kind-weekly" type="radio" name="kind" value="weekly"><label for="kind-weekly">每週固定</label></div><p class="helper" id="kind-help">玩家填寫日期與一個可行時間。</p></div>
-      <div class="field"><label for="min-players">成團人數</label><input id="min-players" name="minPlayers" type="number" min="2" max="20" value="4" required><p class="helper">同一時間達到這個人數，就會列入「可以跑團的時間」。</p></div>
-      <div class="field"><label for="event-note">補充說明 <span>（選填）</span></label><textarea id="event-note" name="note" maxlength="300" placeholder="例如：每次預計進行 4～5 小時"></textarea></div>
-      <p class="message error" id="create-error"></p><button class="button full" type="submit">建立約團表</button>
-    </form></div></main>`;
-  const form = document.querySelector("#create-form");
-  form.addEventListener("change", event => {
-    if (event.target.name === "kind") document.querySelector("#kind-help").textContent = event.target.value === "single" ? "玩家填寫日期與一個可行時間。" : "玩家填寫每週固定有空的星期與時間。";
-  });
-  form.addEventListener("submit", createEvent);
+  const year = monthCursor.getFullYear();
+  const month = monthCursor.getMonth() + 1;
+  const upcoming = publicEvents.filter(item => !isPast(item)).sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
+  root.innerHTML = `<main class="shell">${nav("home")}
+    <section class="page-head"><div><span class="eyebrow">PUBLIC SCHEDULE</span><h1>跑團月曆</h1><p>查看近期團務、剩餘名額，或送出加團申請。</p></div><div class="view-actions"><button class="button secondary" id="prev-month" aria-label="上個月">‹</button><button class="button secondary" id="today-month">今天</button><button class="button secondary" id="next-month" aria-label="下個月">›</button></div></section>
+    <section class="calendar-panel"><h2>${year} 年 ${month} 月</h2>${calendarHtml()}</section>
+    <section class="section"><div class="section-title"><h2>近期團務</h2><span>${upcoming.length} 場公開團務</span></div><div class="event-list">${upcoming.length ? upcoming.map(item => eventCard(item)).join("") : '<div class="empty">目前沒有公開團務。</div>'}</div></section>
+    <footer>需要管理團務？<a href="#admin">前往 GM／管理員後台</a></footer>
+  </main>`;
+  document.querySelector("#prev-month").onclick = () => { monthCursor = new Date(year, month - 2, 1); renderHome(); };
+  document.querySelector("#next-month").onclick = () => { monthCursor = new Date(year, month, 1); renderHome(); };
+  document.querySelector("#today-month").onclick = () => { monthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1); renderHome(); };
 }
 
-async function createEvent(event) {
-  event.preventDefault();
-  const form = event.currentTarget;
-  const button = form.querySelector("button[type=submit]");
-  const error = document.querySelector("#create-error");
-  const title = form.elements.title.value.trim();
-  const note = form.elements.note.value.trim();
-  const kind = form.elements.kind.value;
-  const minPlayers = Number(form.elements.minPlayers.value);
-  if (!title) return showMessage(error, "請先輸入團務名稱");
-  if (!Number.isInteger(minPlayers) || minPlayers < 2 || minPlayers > 20) return showMessage(error, "成團人數請填 2～20 人");
-  button.disabled = true;
-  button.textContent = "建立中⋯";
-  error.classList.remove("show");
+async function renderGame(id) {
+  root.innerHTML = '<main class="loading-screen"><div class="spinner"></div><p>正在讀取團務⋯</p></main>';
   try {
-    const ref = await addDoc(collection(db, "events"), { title, note, kind, minPlayers, ownerUid: user.uid, createdAt: serverTimestamp() });
-    location.hash = `event=${ref.id}`;
-  } catch (err) {
-    console.error(err);
-    showMessage(error, "建立失敗，請確認 Firebase 設定與資料庫規則。");
-    button.disabled = false;
-    button.textContent = "建立約團表";
-  }
-}
-
-function showMessage(node, message, type = "error") {
-  node.textContent = message;
-  node.className = `message ${type} show`;
-}
-
-function eventIdFromHash() {
-  const match = location.hash.match(/^#event=([A-Za-z0-9]+)$/);
-  return match ? match[1] : null;
-}
-
-async function openEvent(eventId) {
-  if (unsubscribe) unsubscribe();
-  unsubscribe = null;
-  currentEvent = null;
-  availability = [];
-  editorInitialized = false;
-  root.innerHTML = '<main class="loading-screen"><div class="spinner"></div><p>正在讀取約團表⋯</p></main>';
-  try {
-    const snapshot = await getDoc(doc(db, "events", eventId));
-    if (!snapshot.exists()) return notFound("找不到這張約團表，可能已被刪除或連結不完整。");
-    currentEvent = { id: snapshot.id, ...snapshot.data() };
-    if (!["single", "weekly"].includes(currentEvent.kind)) return notFound("這張約團表的格式無法辨識。");
-    currentEvent.minPlayers = Number.isInteger(currentEvent.minPlayers) && currentEvent.minPlayers >= 2 && currentEvent.minPlayers <= 20 ? currentEvent.minPlayers : 4;
-    draftSlots = [newSlot(currentEvent.kind)];
-    calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-    renderEventShell();
-    unsubscribe = onSnapshot(collection(db, "events", eventId, "availability"), result => {
-      availability = result.docs.map(item => ({ id: item.id, ...item.data() }));
-      const mine = availability.find(item => item.id === user.uid);
-      if (!editorInitialized) {
-        if (mine?.slots?.length) {
-          draftSlots = mine.slots.map(slot => normalizeSlot(slot, currentEvent.kind));
-          document.querySelector("#player-name").value = mine.name;
-          if (currentEvent.kind === "single" && draftSlots[0].date) {
-            const [year, month] = draftSlots[0].date.split("-").map(Number);
-            calendarCursor = new Date(year, month - 1, 1);
-          }
-        }
-        editorInitialized = true;
-        renderEditor();
-      }
-      renderCalendar();
-    }, err => {
-      console.error(err);
-      const node = document.querySelector("#load-error");
-      if (node) showMessage(node, "無法同步資料，請確認 Firestore 規則是否已發布。");
+    const snap = await getDoc(doc(db, "managedEvents", id));
+    if (!snap.exists()) throw new Error("找不到這場團務。");
+    const event = { id: snap.id, ...snap.data() };
+    const count = spots(event);
+    const closed = event.registrationClosed || count.remaining === 0 || isPast(event);
+    const link = safeUrl(event.externalLink);
+    root.innerHTML = `<main class="shell narrow">${nav()}
+      <a class="back" href="#">← 回到跑團月曆</a>
+      <article class="detail-card">
+        <div class="detail-head"><div><div class="badges"><span class="badge system">${escapeHtml(event.system || "TRPG")}</span><span class="badge ${closed ? "closed" : "open"}">${closed ? "報名關閉" : "開放報名"}</span></div><h1>${escapeHtml(event.title)}</h1><p>${escapeHtml(event.scenario || "劇本未填")}</p></div><div class="capacity"><b>${count.remaining}</b><span>剩餘名額</span></div></div>
+        <dl class="detail-grid"><div><dt>日期</dt><dd>${escapeHtml(formatDate(event.date))}</dd></div><div><dt>時間</dt><dd>${escapeHtml(event.time || "時間未定")}</dd></div><div><dt>主持人</dt><dd>${escapeHtml(event.gm || "未填")}</dd></div><div><dt>人數</dt><dd>${count.approved}／${count.capacity} 人</dd></div><div><dt>地點</dt><dd>${escapeHtml(event.location || "地點未定")}</dd></div><div><dt>系統</dt><dd>${escapeHtml(event.system || "未填")}</dd></div></dl>
+        ${event.description ? `<section class="description"><h2>團務說明</h2><p>${escapeHtml(event.description)}</p></section>` : ""}
+        ${link ? `<a class="button secondary external" href="${escapeHtml(link)}" target="_blank" rel="noreferrer">開啟相關連結 ↗</a>` : ""}
+      </article>
+      <section class="join-card"><h2>${closed ? "本團目前不接受申請" : "申請加入這場團"}</h2>${closed ? '<p class="muted">名額已滿、報名已關閉，或團務日期已結束。</p>' : `
+        <form id="join-form"><div class="form-grid"><label>玩家名稱<input name="playerName" maxlength="30" required></label><label>聯絡方式<input name="contact" maxlength="100" placeholder="Discord、LINE 或 Email" required></label></div><label>想對 GM 說的話<textarea name="note" maxlength="500" placeholder="角色概念、跑團經驗或其他備註（選填）"></textarea></label><button class="button" type="submit">送出加團申請</button></form>`}</section>
+    </main>`;
+    document.querySelector("#join-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      const button = form.querySelector("button");
+      button.disabled = true;
+      try {
+        await addDoc(collection(db, "managedEvents", id, "joinRequests"), {
+          applicantUid: user.uid,
+          playerName: form.playerName.value.trim(),
+          contact: form.contact.value.trim(),
+          note: form.note.value.trim(),
+          status: "pending",
+          createdAt: serverTimestamp()
+        });
+        form.innerHTML = '<div class="success-box"><b>申請已送出</b><span>GM 審核後會透過你留下的方式聯絡。</span></div>';
+      } catch (error) { showError(error, "申請送出失敗。"); button.disabled = false; }
     });
-  } catch (err) {
-    console.error(err);
-    notFound("暫時無法讀取約團表，請稍後再試。");
+  } catch (error) {
+    root.innerHTML = `<main class="error-screen"><h1>無法開啟團務</h1><p>${escapeHtml(error.message)}</p><a class="button" href="#">回首頁</a></main>`;
   }
 }
 
-function notFound(message) {
-  root.innerHTML = `<main class="card setup-card"><div class="brandmark" aria-hidden="true">⚄</div><h1>${escapeHtml(message)}</h1><p>你可以回到首頁建立一張新的約團表。</p><a class="button" href="#">回到首頁</a></main>`;
+async function getRole(account) {
+  if (!account || account.isAnonymous) return null;
+  const [admin, gm] = await Promise.all([
+    getDoc(doc(db, "admins", account.uid)),
+    getDoc(doc(db, "gms", account.uid))
+  ]);
+  if (admin.exists()) return { key: "admin", label: admin.data().displayName || "管理員" };
+  if (gm.exists()) return { key: "gm", label: gm.data().displayName || "GM" };
+  return null;
 }
 
-function renderEventShell() {
-  root.innerHTML = `<main class="shell">${brandBar(true)}
-    <section class="event-head"><div class="event-head-row"><div><span class="pill">${currentEvent.kind === "single" ? "單次約團" : "每週固定"}</span><span class="pill">滿 ${currentEvent.minPlayers} 人成團</span><h1>${escapeHtml(currentEvent.title)}</h1>${currentEvent.note ? `<p>${escapeHtml(currentEvent.note)}</p>` : ""}</div><div class="count-box"><b id="people-count">0</b><span>人已填寫</span></div></div></section>
-    <div class="event-grid calendar-layout"><section class="panel calendar-panel"><div class="calendar-toolbar"><div><h2>團務月曆</h2><p>早／中／晚標籤移上去可查看實際時間；自己的時間可按 × 刪除</p></div><div class="calendar-nav"><button class="button secondary compact" id="previous-month" type="button" aria-label="上一個月">‹</button><button class="button secondary compact today-button" id="today-month" type="button">今天</button><button class="button secondary compact" id="next-month" type="button" aria-label="下一個月">›</button></div></div><h3 class="month-title" id="month-title"></h3><div class="calendar-scroll"><div class="calendar" id="calendar"></div></div><section class="ready-summary" id="ready-summary"></section></section>
-      <form class="panel sticky" id="availability-form"><div class="panel-heading"><div><h2>填寫我的時間</h2><p>每筆資料填寫一個可行時間</p></div></div><div class="field"><label for="player-name">你的暱稱</label><input id="player-name" maxlength="24" required placeholder="例如：小明" value="${escapeHtml(localStorage.getItem("trpg-scheduler-name") || "")}"></div><div class="slot-editor" id="slot-editor"></div><button class="button dashed" id="add-slot" type="button">＋ 再加一個時間</button><p class="message" id="save-message"></p><p class="message error" id="load-error"></p><button class="button full" type="submit">儲存我的時間</button></form>
-    </div><p class="footer-note">知道完整分享連結的人可以看到團務名稱、暱稱與時間，請避免填寫私密內容。</p></main>`;
-  document.querySelector("#copy-link").addEventListener("click", copyLink);
-  document.querySelector("#availability-form").addEventListener("submit", saveAvailability);
-  document.querySelector("#add-slot").addEventListener("click", () => {
-    if (draftSlots.length >= 30) return toast("最多可以加入 30 個時間");
-    syncDraftInputs();
-    draftSlots.push(newSlot(currentEvent.kind));
-    renderEditor();
-  });
-  document.querySelector("#previous-month").addEventListener("click", () => changeMonth(-1));
-  document.querySelector("#next-month").addEventListener("click", () => changeMonth(1));
-  document.querySelector("#today-month").addEventListener("click", () => {
-    calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-    renderCalendar();
-  });
-  renderEditor();
-  renderCalendar();
-}
-
-function renderEditor() {
-  const editor = document.querySelector("#slot-editor");
-  if (!editor) return;
-  editor.innerHTML = draftSlots.length ? draftSlots.map((slot, index) => `<div class="slot-row" data-index="${index}"><div class="slot-row-head"><span>可行時間 ${index + 1}</span><button class="icon-button remove-slot" type="button" aria-label="刪除時間 ${index + 1}" data-index="${index}">×</button></div>
-    ${currentEvent.kind === "single" ? `<div class="slot-fields"><label>日期<input type="date" data-key="date" value="${escapeHtml(slot.date || "")}" required></label><label>時間<input type="text" inputmode="numeric" maxlength="5" placeholder="2000" data-key="time" value="${escapeHtml(slot.time || "")}" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]|[0-9]{1,4}" required></label></div>` : `<div class="slot-fields"><label>星期<select data-key="weekday">${DAYS.map((day, dayIndex) => `<option value="${dayIndex}" ${Number(slot.weekday) === dayIndex ? "selected" : ""}>${day}</option>`).join("")}</select></label><label>時間<input type="text" inputmode="numeric" maxlength="5" placeholder="2000" data-key="time" value="${escapeHtml(slot.time || "")}" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]|[0-9]{1,4}" required></label></div>`}
-    <p class="time-hint">可直接輸入 4 位數字，例如 2000 會變成 20:00</p></div>`).join("") : `<p class="empty-editor">目前沒有時間。按下儲存即可刪除你的全部時間資料。</p>`;
-  const submitButton = document.querySelector('#availability-form button[type="submit"]');
-  if (submitButton) submitButton.textContent = draftSlots.length ? "儲存我的時間" : "刪除所有時間";
-  editor.querySelectorAll("input, select").forEach(input => input.addEventListener("change", syncDraftInputs));
-  editor.querySelectorAll('[data-key="time"]').forEach(input => {
-    input.addEventListener("input", handleTimeTyping);
-    input.addEventListener("blur", finishTimeTyping);
-  });
-  editor.querySelectorAll(".remove-slot").forEach(button => button.addEventListener("click", () => {
-    syncDraftInputs();
-    draftSlots.splice(Number(button.dataset.index), 1);
-    renderEditor();
-  }));
-}
-
-function syncDraftInputs() {
-  document.querySelectorAll(".slot-row").forEach(row => {
-    const index = Number(row.dataset.index);
-    row.querySelectorAll("input, select").forEach(input => {
-      draftSlots[index][input.dataset.key] = input.dataset.key === "weekday" ? Number(input.value) : input.value;
-    });
-  });
-}
-
-async function saveAvailability(event) {
-  event.preventDefault();
-  syncDraftInputs();
-  draftSlots = draftSlots.map(slot => ({ ...slot, time: normalizeTimeValue(slot.time, true) }));
-  const name = document.querySelector("#player-name").value.trim();
-  const message = document.querySelector("#save-message");
-  const button = event.currentTarget.querySelector("button[type=submit]");
-  if (!name) return showMessage(message, "請輸入你的暱稱");
-  const invalid = draftSlots.some(slot => (currentEvent.kind === "single" && !slot.date) || !TIME_PATTERN.test(slot.time || ""));
-  if (invalid) return showMessage(message, "請確認日期，並以 HH:mm 格式輸入時間，例如 19:30。");
-  button.disabled = true;
-  button.textContent = "儲存中⋯";
-  message.classList.remove("show");
-  try {
-    const availabilityRef = doc(db, "events", currentEvent.id, "availability", user.uid);
-    if (draftSlots.length === 0) {
-      await deleteDoc(availabilityRef);
-      availability = availability.filter(item => item.id !== user.uid);
-      showMessage(message, "已刪除你的所有時間。", "success");
-      renderCalendar();
-      return;
-    }
-    await setDoc(availabilityRef, { name, slots: draftSlots, updatedAt: serverTimestamp() });
-    localStorage.setItem("trpg-scheduler-name", name);
-    if (currentEvent.kind === "single" && draftSlots[0].date) {
-      const [year, month] = draftSlots[0].date.split("-").map(Number);
-      calendarCursor = new Date(year, month - 1, 1);
-    }
-    showMessage(message, "已儲存！這台裝置之後仍可回來修改。", "success");
-    renderCalendar();
-  } catch (err) {
-    console.error(err);
-    showMessage(message, "儲存失敗，請確認 Firebase 設定與資料庫規則。");
-  } finally {
-    button.disabled = false;
-    button.textContent = draftSlots.length ? "儲存我的時間" : "刪除所有時間";
-  }
-}
-
-function changeMonth(amount) {
-  calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + amount, 1);
-  renderCalendar();
-}
-
-function renderCalendar() {
-  const calendar = document.querySelector("#calendar");
-  const title = document.querySelector("#month-title");
-  const count = document.querySelector("#people-count");
-  if (!calendar || !title || !count) return;
-  count.textContent = availability.length;
-  const year = calendarCursor.getFullYear();
-  const month = calendarCursor.getMonth();
-  title.textContent = `${year} 年 ${month + 1} 月`;
-  const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7;
-  const totalDays = new Date(year, month + 1, 0).getDate();
-  const today = new Date();
-  const todayKey = dateKey(today.getFullYear(), today.getMonth(), today.getDate());
-  const cells = [];
-  for (let blank = 0; blank < firstWeekday; blank++) cells.push('<div class="calendar-day outside" aria-hidden="true"></div>');
-  for (let day = 1; day <= totalDays; day++) {
-    const key = dateKey(year, month, day);
-    const weekday = (new Date(year, month, day).getDay() + 6) % 7;
-    const groups = entriesForDate(key, weekday);
-    cells.push(`<section class="calendar-day ${key === todayKey ? "is-today" : ""}"><div class="day-number">${day}</div><div class="day-entries">${groups.map(group => calendarEntry(group, key, weekday)).join("")}</div></section>`);
-  }
-  const remainder = (7 - (cells.length % 7)) % 7;
-  for (let blank = 0; blank < remainder; blank++) cells.push('<div class="calendar-day outside" aria-hidden="true"></div>');
-  calendar.innerHTML = `<div class="weekday">一</div><div class="weekday">二</div><div class="weekday">三</div><div class="weekday">四</div><div class="weekday">五</div><div class="weekday weekend">六</div><div class="weekday weekend">日</div>${cells.join("")}`;
-  calendar.querySelectorAll(".calendar-delete").forEach(button => button.addEventListener("click", deleteSavedSlot));
-  renderReadySummary();
-}
-
-function entriesForDate(key, weekday) {
-  const grouped = new Map();
-  availability.forEach(person => (person.slots || []).forEach(raw => {
-    const slot = normalizeSlot(raw, currentEvent.kind);
-    const matches = currentEvent.kind === "weekly" ? slot.weekday === weekday : slot.date === key;
-    if (!matches || !TIME_PATTERN.test(slot.time || "")) return;
-    const people = grouped.get(slot.time) || [];
-    if (!people.some(entry => entry.id === person.id)) people.push({ id: person.id, name: person.name });
-    grouped.set(slot.time, people);
-  }));
-  return [...grouped.entries()].sort(([timeA], [timeB]) => timeA.localeCompare(timeB)).map(([time, people]) => ({ time, people }));
-}
-
-function calendarEntry(group, key, weekday) {
-  const period = periodFor(group.time);
-  const people = group.people.sort((a, b) => a.name.localeCompare(b.name, "zh-Hant")).map(person => {
-    const hue = colorHue(person.id || person.name);
-    const initial = [...String(person.name || "?")][0];
-    const remove = person.id === user.uid ? `<button class="calendar-delete" type="button" data-date="${key}" data-weekday="${weekday}" data-time="${escapeHtml(group.time)}" aria-label="刪除 ${escapeHtml(person.name)} 的 ${escapeHtml(group.time)} 時間" title="刪除這個時間">×</button>` : "";
-    return `<span class="calendar-person"><span class="user-token" style="--token-hue:${hue}" aria-hidden="true">${escapeHtml(initial)}</span><span class="calendar-name">${escapeHtml(person.name)}</span>${remove}</span>`;
-  }).join("");
-  return `<div class="calendar-entry"><div class="calendar-people">${people}</div><span class="period-tag period-${period.key}" data-time="${escapeHtml(group.time)}" tabindex="0" aria-label="${period.full}，${escapeHtml(group.time)}">${period.short}</span></div>`;
-}
-
-async function deleteSavedSlot(event) {
-  const button = event.currentTarget;
-  const mine = availability.find(item => item.id === user.uid);
-  if (!mine?.slots?.length) return;
-  const targetTime = button.dataset.time;
-  const targetDate = button.dataset.date;
-  const targetWeekday = Number(button.dataset.weekday);
-  const remaining = mine.slots.map(slot => normalizeSlot(slot, currentEvent.kind)).filter(slot => {
-    if (slot.time !== targetTime) return true;
-    return currentEvent.kind === "weekly" ? slot.weekday !== targetWeekday : slot.date !== targetDate;
-  });
-  if (remaining.length === mine.slots.length) return;
-  const label = currentEvent.kind === "weekly" ? `${DAYS[targetWeekday]} ${targetTime}` : `${formatDateLabel(targetDate)} ${targetTime}`;
-  if (!window.confirm(`確定要刪除 ${label} 嗎？`)) return;
-  button.disabled = true;
-  try {
-    const availabilityRef = doc(db, "events", currentEvent.id, "availability", user.uid);
-    if (remaining.length) {
-      await setDoc(availabilityRef, { name: mine.name, slots: remaining, updatedAt: serverTimestamp() });
-      availability = availability.map(item => item.id === user.uid ? { ...item, slots: remaining } : item);
-    } else {
-      await deleteDoc(availabilityRef);
-      availability = availability.filter(item => item.id !== user.uid);
-    }
-    draftSlots = remaining;
-    renderEditor();
-    renderCalendar();
-    showMessage(document.querySelector("#save-message"), `已刪除 ${label}。`, "success");
-  } catch (err) {
-    console.error(err);
-    button.disabled = false;
-    showMessage(document.querySelector("#save-message"), "刪除失敗，請確認 Firebase 規則已更新。");
-  }
-}
-
-function groupedSchedule() {
-  const grouped = new Map();
-  availability.forEach(person => (person.slots || []).forEach(raw => {
-    const slot = normalizeSlot(raw, currentEvent.kind);
-    if (!TIME_PATTERN.test(slot.time || "")) return;
-    const scheduleKey = currentEvent.kind === "weekly" ? `${slot.weekday}|${slot.time}` : `${slot.date}|${slot.time}`;
-    const item = grouped.get(scheduleKey) || { ...slot, people: [] };
-    if (!item.people.some(entry => entry.id === person.id)) item.people.push({ id: person.id, name: person.name });
-    grouped.set(scheduleKey, item);
-  }));
-  return [...grouped.values()].sort((a, b) => {
-    const keyA = currentEvent.kind === "weekly" ? `${a.weekday}-${a.time}` : `${a.date}-${a.time}`;
-    const keyB = currentEvent.kind === "weekly" ? `${b.weekday}-${b.time}` : `${b.date}-${b.time}`;
-    return keyA.localeCompare(keyB);
-  });
-}
-
-function readySchedule() {
-  return groupedSchedule().filter(item => item.people.length >= currentEvent.minPlayers);
-}
-
-function formatDateLabel(value) {
-  const [year, month, day] = String(value || "").split("-").map(Number);
-  if (!year || !month || !day) return value;
-  const weekday = (new Date(year, month - 1, day).getDay() + 6) % 7;
-  return `${year} 年 ${month} 月 ${day} 日（${DAYS[weekday]}）`;
-}
-
-function readyScheduleText(items = readySchedule()) {
-  return items.map(item => {
-    const when = currentEvent.kind === "weekly" ? `每${DAYS[item.weekday]}` : formatDateLabel(item.date);
-    const names = item.people.map(person => person.name).sort((a, b) => a.localeCompare(b, "zh-Hant")).join("、");
-    return `${when} ${item.time} 可以跑團（${item.people.length} 人：${names}）`;
-  }).join("\n");
-}
-
-function renderReadySummary() {
-  const summary = document.querySelector("#ready-summary");
-  if (!summary) return;
-  const items = readySchedule();
-  summary.innerHTML = `<div class="ready-summary-head"><div><h3>可以跑團的時間</h3><p>同一時間滿 ${currentEvent.minPlayers} 人會自動列在這裡。</p></div>${items.length ? '<button class="button secondary" id="copy-ready" type="button">複製文字</button>' : ""}</div>${items.length ? `<div class="ready-list">${items.map(item => {
-    const when = currentEvent.kind === "weekly" ? `每${DAYS[item.weekday]}` : formatDateLabel(item.date);
-    const names = item.people.map(person => person.name).sort((a, b) => a.localeCompare(b, "zh-Hant")).join("、");
-    return `<div class="ready-item"><b>${escapeHtml(when)}　${escapeHtml(item.time)}</b><span>${item.people.length} 人：${escapeHtml(names)}</span></div>`;
-  }).join("")}</div>` : `<p class="ready-empty">目前還沒有滿 ${currentEvent.minPlayers} 人的共同時間。</p>`}`;
-  document.querySelector("#copy-ready")?.addEventListener("click", async () => {
-    const text = readyScheduleText(items);
+function renderLogin(message = "") {
+  root.innerHTML = `<main class="shell narrow">${nav("admin")}<section class="login-card"><span class="brandmark">⚄</span><h1>GM／管理員登入</h1><p>登入後可以建立團務、審核申請與管理時間調查。</p><form id="login-form"><label>Email<input name="email" type="email" autocomplete="email" required></label><label>密碼<input name="password" type="password" autocomplete="current-password" required></label><p class="form-message">${escapeHtml(message)}</p><button class="button full" type="submit">登入管理後台</button></form><a href="#">← 回公開月曆</a></section></main>`;
+  document.querySelector("#login-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const button = e.currentTarget.querySelector("button");
+    button.disabled = true;
     try {
-      await navigator.clipboard.writeText(text);
-      toast("可跑團時間已複製");
-    } catch {
-      window.prompt("請複製以下文字", text);
+      const credential = await signInWithEmailAndPassword(auth, e.currentTarget.email.value.trim(), e.currentTarget.password.value);
+      role = await getRole(credential.user);
+      if (!role) {
+        await signOut(auth);
+        return renderLogin("此帳號尚未被設定為 GM 或管理員。");
+      }
+      renderAdmin();
+    } catch (error) {
+      console.error(error);
+      renderLogin("登入失敗，請確認 Email 與密碼。");
     }
   });
 }
 
-function periodFor(time) {
-  const hour = Number(time.slice(0, 2));
-  if (hour < 12) return { key: "morning", short: "早", full: "早上" };
-  if (hour < 18) return { key: "afternoon", short: "中", full: "中午" };
-  return { key: "evening", short: "晚", full: "晚上" };
+async function subscribeAdminEvents() {
+  unsubscribeAdmin?.();
+  const source = role.key === "admin"
+    ? collection(db, "managedEvents")
+    : query(collection(db, "managedEvents"), where("ownerUid", "==", user.uid));
+  unsubscribeAdmin = onSnapshot(source, snap => {
+    adminEvents = snap.docs.map(item => ({ id: item.id, ...item.data() })).sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
+    renderAdmin();
+  }, error => showError(error, "無法載入管理資料。"));
 }
 
-function colorHue(value) {
-  let hash = 0;
-  for (const character of String(value)) hash = (hash * 31 + character.charCodeAt(0)) % 360;
-  return hash;
+function renderAdmin() {
+  if (!user || user.isAnonymous) return renderLogin();
+  if (!role) return renderLogin("此帳號沒有管理權限。");
+  root.innerHTML = `<main class="shell">${nav("admin")}
+    <section class="admin-head"><div><span class="eyebrow">MANAGEMENT</span><h1>團務管理</h1><p>${escapeHtml(role.label)}・${escapeHtml(user.email || "")}</p></div><div><button class="button secondary" id="logout">登出</button><button class="button" id="new-event">＋ 開團</button></div></section>
+    <div class="admin-grid"><aside class="admin-nav"><button class="active" data-view="managedEvents">團務列表</button><button data-view="requests">加團申請</button><button data-view="polls">時間調查</button></aside><section id="admin-content" class="admin-content"></section></div>
+    <dialog id="event-dialog"></dialog><dialog id="poll-dialog"></dialog>
+  </main>`;
+  document.querySelector("#logout").onclick = async () => {
+    unsubscribeAdmin?.();
+    unsubscribeAdmin = null;
+    await signOut(auth);
+  };
+  document.querySelector("#new-event").onclick = () => openEventDialog();
+  document.querySelectorAll(".admin-nav button").forEach(button => button.onclick = () => {
+    document.querySelectorAll(".admin-nav button").forEach(item => item.classList.toggle("active", item === button));
+    renderAdminView(button.dataset.view);
+  });
+  renderAdminView("managedEvents");
 }
 
-function dateKey(year, month, day) {
-  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-async function copyLink() {
-  try {
-    await navigator.clipboard.writeText(location.href);
-    toast("分享連結已複製");
-  } catch {
-    window.prompt("請複製以下連結", location.href);
+function renderAdminView(view) {
+  const panel = document.querySelector("#admin-content");
+  if (!panel) return;
+  if (view === "managedEvents") {
+    panel.innerHTML = `<div class="panel-title"><div><h2>我的團務</h2><p>公開、隱藏與日期未定的團務都在這裡管理。</p></div></div><div class="manage-list">${adminEvents.length ? adminEvents.map(event => `<article class="manage-row"><div><div class="badges">${event.hidden ? '<span class="badge hidden">本團隱藏</span>' : '<span class="badge open">公開</span>'}${event.registrationClosed ? '<span class="badge closed">關閉報名</span>' : ""}</div><h3>${escapeHtml(event.title)}</h3><p>${escapeHtml(formatDate(event.date))}・${escapeHtml(event.time || "時間未定")}・${escapeHtml(event.gm || "")}</p></div><div class="row-actions"><button class="button secondary edit-event" data-id="${event.id}">編輯</button><button class="button secondary requests-event" data-id="${event.id}">申請</button>${!event.date ? `<button class="button secondary poll-event" data-id="${event.id}">時間調查</button>` : ""}<button class="icon-button delete-event" data-id="${event.id}" aria-label="刪除團務">×</button></div></article>`).join("") : '<div class="empty">還沒有團務，按右上角「開團」建立第一場。</div>'}</div>`;
+    panel.querySelectorAll(".edit-event").forEach(button => button.onclick = () => openEventDialog(adminEvents.find(event => event.id === button.dataset.id)));
+    panel.querySelectorAll(".delete-event").forEach(button => button.onclick = () => deleteEvent(button.dataset.id));
+    panel.querySelectorAll(".requests-event").forEach(button => button.onclick = () => renderRequests(button.dataset.id));
+    panel.querySelectorAll(".poll-event").forEach(button => button.onclick = () => openPollDialog(adminEvents.find(event => event.id === button.dataset.id)));
+  } else if (view === "requests") {
+    panel.innerHTML = `<div class="panel-title"><div><h2>加團申請</h2><p>請先選擇要查看的團務。</p></div><select id="request-event"><option value="">選擇團務</option>${adminEvents.map(event => `<option value="${event.id}">${escapeHtml(event.title)}</option>`).join("")}</select></div><div id="request-list" class="empty">選擇團務後會顯示申請資料。</div>`;
+    document.querySelector("#request-event").onchange = e => e.target.value && renderRequests(e.target.value);
+  } else {
+    renderPollManager();
   }
 }
 
-async function route() {
-  if (!user) return;
-  const eventId = eventIdFromHash();
-  if (eventId) await openEvent(eventId);
-  else renderHome();
+function openEventDialog(event = null) {
+  const dialog = document.querySelector("#event-dialog");
+  const editing = Boolean(event);
+  dialog.innerHTML = `<form method="dialog" class="dialog-card" id="event-form"><div class="dialog-head"><div><span class="eyebrow">EVENT</span><h2>${editing ? "編輯團務" : "建立團務"}</h2></div><button class="icon-button" value="cancel" aria-label="關閉">×</button></div>
+    <div class="form-grid"><label>團名<input name="title" maxlength="80" value="${escapeHtml(event?.title || "")}" required></label><label>主持人<input name="gm" maxlength="40" value="${escapeHtml(event?.gm || role.label)}" required></label><label>系統<input name="system" maxlength="40" value="${escapeHtml(event?.system || "")}" placeholder="例如：CoC 7th" required></label><label>劇本<input name="scenario" maxlength="100" value="${escapeHtml(event?.scenario || "")}" required></label><label>人數<input name="capacity" type="number" min="1" max="30" value="${Number(event?.capacity || 4)}" required></label><label>地點<input name="location" maxlength="100" value="${escapeHtml(event?.location || "")}" required></label></div>
+    <label class="checkline"><input id="date-tbd" name="dateTbd" type="checkbox" ${event && !event.date ? "checked" : ""}>日期未定，之後使用時間調查</label>
+    <div class="form-grid"><label>日期<input id="event-date" name="date" type="date" value="${escapeHtml(event?.date || "")}" ${event && !event.date ? "disabled" : ""}></label><label>時間<input name="time" maxlength="40" value="${escapeHtml(event?.time || "")}" placeholder="例如：20:00～24:00"></label></div>
+    <label>相關連結<input name="externalLink" type="url" value="${escapeHtml(event?.externalLink || "")}" placeholder="Discord、FVTT、ccfolia 或角色卡連結"></label>
+    <label>說明<textarea name="description" maxlength="1500">${escapeHtml(event?.description || "")}</textarea></label>
+    <div class="switches"><label><input name="hidden" type="checkbox" ${event?.hidden ? "checked" : ""}><span><b>本團隱藏</b><small>不顯示於公開月曆與列表</small></span></label><label><input name="registrationClosed" type="checkbox" ${event?.registrationClosed ? "checked" : ""}><span><b>關閉報名</b><small>仍可公開顯示，但不接受新申請</small></span></label></div>
+    <div class="dialog-actions"><button class="button secondary" value="cancel">取消</button><button class="button" id="save-event" type="submit" value="default">儲存團務</button></div></form>`;
+  dialog.showModal();
+  const form = document.querySelector("#event-form");
+  form.querySelectorAll('[value="cancel"]').forEach(button => button.onclick = e => {
+    e.preventDefault();
+    dialog.close();
+  });
+  document.querySelector("#date-tbd").onchange = e => { document.querySelector("#event-date").disabled = e.target.checked; if (e.target.checked) document.querySelector("#event-date").value = ""; };
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    if (!form.dateTbd.checked && !form.date.value) return toast("請選擇日期，或勾選「日期未定」。");
+    const button = document.querySelector("#save-event");
+    button.disabled = true;
+    const data = {
+      title: form.elements.title.value.trim(), gm: form.gm.value.trim(), system: form.system.value.trim(),
+      scenario: form.scenario.value.trim(), capacity: Number(form.capacity.value), location: form.location.value.trim(),
+      date: form.dateTbd.checked ? "" : form.date.value, time: form.time.value.trim(),
+      externalLink: form.externalLink.value.trim(), description: form.description.value.trim(),
+      hidden: form.hidden.checked, registrationClosed: form.registrationClosed.checked,
+      updatedAt: serverTimestamp()
+    };
+    try {
+      if (editing) await updateDoc(doc(db, "managedEvents", event.id), data);
+      else await addDoc(collection(db, "managedEvents"), { ...data, approvedCount: 0, ownerUid: user.uid, createdAt: serverTimestamp() });
+      dialog.close();
+      toast(editing ? "團務已更新" : "團務已建立");
+    } catch (error) { showError(error, "團務儲存失敗。"); button.disabled = false; }
+  });
+}
+
+async function deleteEvent(id) {
+  const event = adminEvents.find(item => item.id === id);
+  if (!event || !confirm(`確定刪除「${event.title}」？申請與時間調查也會一併刪除。`)) return;
+  try {
+    const [requests, polls, players] = await Promise.all([
+      getDocs(collection(db, "managedEvents", id, "joinRequests")),
+      getDocs(collection(db, "managedEvents", id, "polls")),
+      getDocs(role.key === "admin"
+        ? query(collection(db, "pollPlayers"), where("eventId", "==", id))
+        : query(collection(db, "pollPlayers"), where("ownerUid", "==", user.uid)))
+    ]);
+    const relatedPlayers = players.docs.filter(item => item.data().eventId === id);
+    if (requests.size + polls.size + relatedPlayers.length > 450) {
+      return toast("關聯資料過多，請先逐份清除時間調查再刪除團務。");
+    }
+    const batch = writeBatch(db);
+    requests.docs.forEach(item => batch.delete(item.ref));
+    polls.docs.forEach(item => batch.delete(item.ref));
+    relatedPlayers.forEach(item => batch.delete(item.ref));
+    batch.delete(doc(db, "managedEvents", id));
+    await batch.commit();
+    toast("團務與關聯資料已刪除");
+  } catch (error) { showError(error, "團務刪除失敗。"); }
+}
+
+async function renderRequests(eventId) {
+  const panel = document.querySelector("#admin-content");
+  const event = adminEvents.find(item => item.id === eventId);
+  panel.innerHTML = '<div class="loading-inline"><div class="spinner"></div>正在讀取申請⋯</div>';
+  try {
+    const snap = await getDocs(collection(db, "managedEvents", eventId, "joinRequests"));
+    const requests = snap.docs.map(item => ({ id: item.id, ...item.data() }));
+    panel.innerHTML = `<div class="panel-title"><div><button class="back-button" id="back-admin">← 返回</button><h2>${escapeHtml(event.title)}：加團申請</h2><p>核准後會自動計入已核准人數。</p></div><span class="count-pill">${requests.length} 筆</span></div><div class="request-list">${requests.length ? requests.map(item => `<article class="request-card"><div class="request-head"><div><span class="status ${item.status}">${JOIN_STATUS[item.status] || "待處理"}</span><h3>${escapeHtml(item.playerName)}</h3></div><span>${escapeHtml(item.contact)}</span></div>${item.note ? `<p>${escapeHtml(item.note)}</p>` : ""}<div class="row-actions"><button class="button secondary set-request" data-id="${item.id}" data-status="pending">待處理</button><button class="button approve set-request" data-id="${item.id}" data-status="approved">核准</button><button class="button reject set-request" data-id="${item.id}" data-status="rejected">婉拒</button><button class="icon-button delete-request" data-id="${item.id}">×</button></div></article>`).join("") : '<div class="empty">目前沒有加團申請。</div>'}</div>`;
+    document.querySelector("#back-admin").onclick = () => renderAdminView("managedEvents");
+    panel.querySelectorAll(".set-request").forEach(button => button.onclick = () => updateRequest(event, requests.find(item => item.id === button.dataset.id), button.dataset.status));
+    panel.querySelectorAll(".delete-request").forEach(button => button.onclick = () => deleteRequest(event, requests.find(item => item.id === button.dataset.id)));
+  } catch (error) { showError(error, "無法讀取申請。"); }
+}
+
+async function updateRequest(event, request, status) {
+  if (!request || request.status === status) return;
+  const delta = (status === "approved" ? 1 : 0) - (request.status === "approved" ? 1 : 0);
+  if (delta > 0 && spots(event).remaining <= 0) return toast("名額已滿，無法再核准。");
+  const batch = writeBatch(db);
+  batch.update(doc(db, "managedEvents", event.id, "joinRequests", request.id), { status, updatedAt: serverTimestamp() });
+  batch.update(doc(db, "managedEvents", event.id), { approvedCount: Math.max(0, Number(event.approvedCount || 0) + delta), updatedAt: serverTimestamp() });
+  try { await batch.commit(); toast(`申請已設為「${JOIN_STATUS[status]}」`); renderRequests(event.id); } catch (error) { showError(error, "申請狀態更新失敗。"); }
+}
+
+async function deleteRequest(event, request) {
+  if (!confirm("確定刪除這筆申請？")) return;
+  try {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, "managedEvents", event.id, "joinRequests", request.id));
+    if (request.status === "approved") {
+      batch.update(doc(db, "managedEvents", event.id), {
+        approvedCount: Math.max(0, Number(event.approvedCount || 0) - 1),
+        updatedAt: serverTimestamp()
+      });
+    }
+    await batch.commit();
+    toast("申請已刪除");
+    renderRequests(event.id);
+  } catch (error) { showError(error); }
+}
+
+function randomToken() {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function dateRange(start, end) {
+  const dates = [];
+  if (!start || !end || start > end) return dates;
+  const cursor = new Date(`${start}T00:00:00Z`);
+  const finish = new Date(`${end}T00:00:00Z`);
+  while (cursor <= finish && dates.length < 31) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+function openPollDialog(event) {
+  const dialog = document.querySelector("#poll-dialog");
+  dialog.innerHTML = `<form method="dialog" class="dialog-card" id="poll-form"><div class="dialog-head"><div><span class="eyebrow">AVAILABILITY</span><h2>建立時間調查</h2><p>${escapeHtml(event.title)}</p></div><button class="icon-button" value="cancel">×</button></div>
+    <label>日期方式<select name="mode"><option value="range">日期範圍</option><option value="specific">指定日期</option></select></label>
+    <div id="range-fields" class="form-grid"><label>開始日期<input name="start" type="date"></label><label>結束日期<input name="end" type="date"></label></div>
+    <label id="specific-field" hidden>指定日期<textarea name="specific" placeholder="每行一個日期，例如：&#10;2026-10-15&#10;2026-10-18"></textarea></label>
+    <label>玩家名稱<textarea name="players" required placeholder="每行一位玩家，例如：&#10;小明&#10;小蒼&#10;雷恩"></textarea></label>
+    <p class="hint">每位玩家會取得不同的私人連結。預設可填全天、早上、下午、晚上及由 GM 決定。</p>
+    <div class="dialog-actions"><button class="button secondary" value="cancel">取消</button><button class="button" id="create-poll" type="submit" value="default">建立並產生連結</button></div></form>`;
+  dialog.showModal();
+  const form = document.querySelector("#poll-form");
+  form.querySelectorAll('[value="cancel"]').forEach(button => button.onclick = e => {
+    e.preventDefault();
+    dialog.close();
+  });
+  form.mode.onchange = () => {
+    const specific = form.mode.value === "specific";
+    document.querySelector("#range-fields").hidden = specific;
+    document.querySelector("#specific-field").hidden = !specific;
+  };
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    let dates = form.mode.value === "range"
+      ? dateRange(form.start.value, form.end.value)
+      : [...new Set(form.specific.value.split(/\r?\n|,/).map(v => v.trim()).filter(v => /^\d{4}-\d{2}-\d{2}$/.test(v)))].sort();
+    const players = [...new Set(form.players.value.split(/\r?\n/).map(v => v.trim()).filter(Boolean))];
+    if (!dates.length) return toast("請填寫有效的日期。");
+    if (dates.length > 31) return toast("一次調查最多可以設定 31 個日期。");
+    if (!players.length) return toast("請至少輸入一位玩家。");
+    if (players.length > 100) return toast("一次調查最多可以加入 100 位玩家。");
+    const button = document.querySelector("#create-poll");
+    button.disabled = true;
+    try {
+      const pollRef = await addDoc(collection(db, "managedEvents", event.id, "polls"), {
+        ownerUid: user.uid, dates, periods: PERIODS.map(item => item[0]), active: true, createdAt: serverTimestamp()
+      });
+      const batch = writeBatch(db);
+      players.forEach(name => {
+        const token = randomToken();
+        batch.set(doc(db, "pollPlayers", token), {
+          pollId: pollRef.id, eventId: event.id, eventTitle: event.title, ownerUid: user.uid, playerName: name,
+          dates, periods: PERIODS.map(item => item[0]), slots: [], submitted: false, updatedAt: serverTimestamp()
+        });
+      });
+      await batch.commit();
+      dialog.close();
+      toast("時間調查已建立");
+      renderPollDetail(event.id, pollRef.id);
+    } catch (error) { showError(error, "時間調查建立失敗。"); button.disabled = false; }
+  });
+}
+
+async function renderPollManager() {
+  const panel = document.querySelector("#admin-content");
+  panel.innerHTML = `<div class="panel-title"><div><h2>時間調查</h2><p>只有日期未定的團務能建立調查。</p></div><select id="poll-event"><option value="">選擇團務</option>${adminEvents.filter(event => !event.date).map(event => `<option value="${event.id}">${escapeHtml(event.title)}</option>`).join("")}</select></div><div id="poll-list" class="empty">選擇團務後會顯示時間調查。</div>`;
+  document.querySelector("#poll-event").onchange = e => e.target.value && listPolls(e.target.value);
+}
+
+async function listPolls(eventId) {
+  const area = document.querySelector("#poll-list");
+  const event = adminEvents.find(item => item.id === eventId);
+  area.className = "";
+  area.innerHTML = '<div class="loading-inline"><div class="spinner"></div>正在讀取調查⋯</div>';
+  try {
+    const snap = await getDocs(collection(db, "managedEvents", eventId, "polls"));
+    const polls = snap.docs.map(item => ({ id: item.id, ...item.data() }));
+    area.innerHTML = `<div class="poll-toolbar"><span>${polls.length} 份調查</span><button class="button" id="new-poll">＋ 建立調查</button></div><div class="manage-list">${polls.length ? polls.map(poll => `<article class="manage-row"><div><h3>${poll.dates.length} 個候選日期</h3><p>${escapeHtml(poll.dates[0])} ～ ${escapeHtml(poll.dates.at(-1))}</p></div><div class="row-actions"><button class="button secondary open-poll" data-id="${poll.id}">查看結果</button><button class="button reject clear-poll" data-id="${poll.id}">清除</button></div></article>`).join("") : '<div class="empty">尚未建立調查。</div>'}</div>`;
+    document.querySelector("#new-poll").onclick = () => openPollDialog(event);
+    area.querySelectorAll(".open-poll").forEach(button => button.onclick = () => renderPollDetail(eventId, button.dataset.id));
+    area.querySelectorAll(".clear-poll").forEach(button => button.onclick = () => clearPoll(eventId, button.dataset.id));
+  } catch (error) { showError(error, "無法讀取調查。"); }
+}
+
+async function pollPlayers(pollId) {
+  const source = role.key === "admin"
+    ? query(collection(db, "pollPlayers"), where("pollId", "==", pollId))
+    : query(collection(db, "pollPlayers"), where("ownerUid", "==", user.uid));
+  const snap = await getDocs(source);
+  return snap.docs.map(item => ({ token: item.id, ...item.data() })).filter(item => item.pollId === pollId);
+}
+
+function pollResults(players) {
+  const keys = new Set(players.flatMap(player => player.dates.flatMap(date => player.periods.map(period => `${date}|${period}`))));
+  return [...keys].map(key => {
+    const available = players.filter(player => player.slots.includes(key));
+    return { key, available, total: players.length };
+  }).sort((a, b) => b.available.length - a.available.length || a.key.localeCompare(b.key));
+}
+
+async function renderPollDetail(eventId, pollId) {
+  const panel = document.querySelector("#admin-content");
+  const event = adminEvents.find(item => item.id === eventId);
+  panel.innerHTML = '<div class="loading-inline"><div class="spinner"></div>正在計算共同時段⋯</div>';
+  try {
+    const players = await pollPlayers(pollId);
+    const results = pollResults(players);
+    const common = results.filter(item => players.length && item.available.length === players.length);
+    const majority = results.filter(item => item.available.length >= Math.ceil(players.length / 2) && item.available.length < players.length).slice(0, 12);
+    const base = location.href.split("#")[0];
+    root.querySelector("#admin-content").innerHTML = `<div class="panel-title"><div><button class="back-button" id="back-polls">← 返回</button><h2>${escapeHtml(event.title)}：時間調查</h2><p>${players.filter(p => p.submitted).length}／${players.length} 人已填寫</p></div><button class="button secondary" id="copy-links">複製所有私人連結</button></div>
+      <div class="result-grid"><section><h3>全員共同時段</h3>${common.length ? common.map(resultRow).join("") : '<div class="empty small">目前沒有全員共同時段。</div>'}</section><section><h3>多數可跑時段</h3>${majority.length ? majority.map(resultRow).join("") : '<div class="empty small">目前沒有多數時段。</div>'}</section></div>
+      <section class="player-links"><h3>玩家填寫狀態與私人連結</h3>${players.map(player => `<div class="player-link"><span class="status ${player.submitted ? "approved" : "pending"}">${player.submitted ? "已填寫" : "未填寫"}</span><b>${escapeHtml(player.playerName)}</b><input readonly value="${escapeHtml(base + "#poll=" + player.token)}"><button class="button secondary copy-player" data-token="${player.token}">複製</button></div>`).join("")}</section>`;
+    document.querySelector("#back-polls").onclick = () => { renderAdminView("polls"); setTimeout(() => listPolls(eventId)); };
+    document.querySelector("#copy-links").onclick = () => copyText(players.map(p => `${p.playerName}：${base}#poll=${p.token}`).join("\n"));
+    document.querySelectorAll(".copy-player").forEach(button => button.onclick = () => copyText(`${base}#poll=${button.dataset.token}`));
+  } catch (error) { showError(error, "無法載入調查結果。"); }
+}
+
+function resultRow(item) {
+  const [date, period] = item.key.split("|");
+  return `<div class="result-row"><div><b>${escapeHtml(formatDate(date))}</b><span>${escapeHtml(period)}</span></div><strong>${item.available.length}／${item.total}</strong><small>${escapeHtml(item.available.map(p => p.playerName).join("、"))}</small></div>`;
+}
+
+async function clearPoll(eventId, pollId) {
+  if (!confirm("清除後，所有玩家的私人連結都會立即失效。確定繼續？")) return;
+  try {
+    const players = await pollPlayers(pollId);
+    const batch = writeBatch(db);
+    players.forEach(player => batch.delete(doc(db, "pollPlayers", player.token)));
+    batch.delete(doc(db, "managedEvents", eventId, "polls", pollId));
+    await batch.commit();
+    toast("調查資料已清除，舊連結已失效");
+    listPolls(eventId);
+  } catch (error) { showError(error, "調查清除失敗。"); }
+}
+
+async function copyText(value) {
+  try { await navigator.clipboard.writeText(value); toast("已複製"); } catch { toast("無法自動複製，請手動選取。"); }
+}
+
+async function renderPlayerPoll(token) {
+  root.innerHTML = '<main class="loading-screen"><div class="spinner"></div><p>正在開啟你的私人時間表⋯</p></main>';
+  try {
+    const ref = doc(db, "pollPlayers", token);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw new Error("這個調查連結不存在或已失效。");
+    const player = snap.data();
+    let event = { title: player.eventTitle || "團務時間調查" };
+    try {
+      const eventSnap = await getDoc(doc(db, "managedEvents", player.eventId));
+      if (eventSnap.exists()) event = eventSnap.data();
+    } catch {
+      // 隱藏團務不向訪客公開；私人連結仍可使用其中保存的團名。
+    }
+    const selected = new Set(player.slots || []);
+    root.innerHTML = `<main class="shell narrow"><header class="poll-brand"><span class="brandmark">⚄</span><div><small>私人時間調查</small><b>${escapeHtml(event.title)}</b></div></header><section class="poll-intro"><span>填寫者</span><h1>${escapeHtml(player.playerName)}</h1><p>點選你可以跑團的時段；可複選。這個連結只屬於你，請不要轉傳。</p></section><form id="player-poll"><div class="availability-table"><div class="availability-head"><span>日期</span>${player.periods.map(period => `<span title="${escapeHtml(PERIODS.find(item => item[0] === period)?.[1] || "")}">${escapeHtml(period)}</span>`).join("")}</div>${player.dates.map(date => `<div class="availability-row"><b>${escapeHtml(formatDate(date))}</b>${player.periods.map(period => { const key = `${date}|${period}`; return `<label class="slot-check"><input type="checkbox" value="${escapeHtml(key)}" ${selected.has(key) ? "checked" : ""}><span>✓</span></label>`; }).join("")}</div>`).join("")}</div><button class="button full" type="submit">儲存我的時間</button></form></main>`;
+    document.querySelector("#player-poll").onsubmit = async e => {
+      e.preventDefault();
+      const slots = [...e.currentTarget.querySelectorAll('input:checked')].map(input => input.value);
+      const button = e.currentTarget.querySelector("button");
+      button.disabled = true;
+      try {
+        await updateDoc(ref, { slots, submitted: true, updatedAt: serverTimestamp() });
+        button.textContent = "已儲存！仍可繼續修改";
+        toast("你的時間已儲存");
+      } catch (error) { showError(error, "時間儲存失敗。"); button.disabled = false; }
+    };
+  } catch (error) {
+    root.innerHTML = `<main class="error-screen"><span class="brandmark">⚄</span><h1>無法開啟時間調查</h1><p>${escapeHtml(error.message)}</p></main>`;
+  }
+}
+
+async function handleRoute() {
+  const current = route();
+  if (current.page === "poll") return renderPlayerPoll(current.id);
+  if (current.page === "game") return renderGame(current.id);
+  if (current.page === "admin") {
+    if (!user || user.isAnonymous) return renderLogin();
+    role = await getRole(user);
+    if (!role) return renderLogin("此帳號尚未被設定為 GM 或管理員。");
+    if (!unsubscribeAdmin) subscribeAdminEvents();
+    return renderAdmin();
+  }
+  renderHome();
 }
 
 async function start() {
-  if (!isConfigured()) return setupScreen();
-  try {
-    const app = initializeApp(firebaseConfig);
-    auth = getAuth(app);
-    db = getFirestore(app);
-    onAuthStateChanged(auth, async current => {
-      if (!current) return signInAnonymously(auth);
-      user = current;
-      await route();
-    });
-  } catch (err) {
-    console.error(err);
-    setupScreen();
-  }
+  const app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  onAuthStateChanged(auth, async account => {
+    user = account;
+    if (!user) return signInAnonymously(auth);
+    unsubscribePublic?.();
+    const publicQuery = query(collection(db, "managedEvents"), where("hidden", "==", false));
+    unsubscribePublic = onSnapshot(publicQuery, snap => {
+      publicEvents = snap.docs.map(item => ({ id: item.id, ...item.data() }));
+      if (["home"].includes(route().page)) renderHome();
+    }, error => showError(error, "無法載入公開團務。"));
+    await handleRoute();
+  });
+  window.addEventListener("hashchange", handleRoute);
 }
 
-window.addEventListener("hashchange", route);
-start();
+start().catch(error => {
+  console.error(error);
+  root.innerHTML = '<main class="error-screen"><h1>網站初始化失敗</h1><p>請確認 Firebase 設定與網路連線。</p></main>';
+});
