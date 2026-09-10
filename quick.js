@@ -104,7 +104,7 @@ function renderCreate() {
         <label>給玩家的聯絡方式（選填）<input name="contact" maxlength="120" placeholder="Discord、LINE 或其他聯絡方式"></label>
         <label>給玩家的說明<textarea name="note" maxlength="800" placeholder="預計遊玩的系統、時數或其他提醒"></textarea></label>
         <label>成團門檻<input name="minPlayers" type="number" min="1" max="20" value="4" required><small class="muted">只用來判斷哪些時段可以成團，不會限制填表人數。</small></label>
-        <h3>時段範圍</h3><div class="period-settings"><label class="period-setting"><span>早上</span><input name="morning" value="08:00～12:00" required></label><label class="period-setting"><span>下午</span><input name="afternoon" value="14:00～18:00" required></label><label class="period-setting"><span>晚上</span><input name="evening" value="20:00～24:00" required></label></div>
+        <h3>時段範圍</h3><div class="period-settings"><label class="period-setting"><span>早上</span><input name="morning" value="09:00～12:00" required></label><label class="period-setting"><span>下午</span><input name="afternoon" value="13:00～18:00" required></label><label class="period-setting"><span>晚上</span><input name="evening" value="20:30～24:00" required></label></div>
         <p class="quick-note">玩家只會看到「早上／下午／晚上／X」四個按鈕；滑鼠移到時段上即可查看你設定的範圍。</p>
         <button class="button full" type="submit">建立快速約團表</button>
       </section>
@@ -311,7 +311,7 @@ function renderSchedule(mineData) {
 }
 
 function periodLegendMarkup(ranges) {
-  const defaults = { "早上": "08:00～12:00", "下午": "14:00～18:00", "晚上": "20:00～24:00" };
+  const defaults = { "早上": "09:00～12:00", "下午": "13:00～18:00", "晚上": "20:30～24:00" };
   return `<div class="period-legend" aria-label="本團時段範圍">${PERIOD_KEYS.map(period => `<span><b>${period}</b>${escapeHtml(ranges[period] || defaults[period])}</span>`).join("")}</div>`;
 }
 
