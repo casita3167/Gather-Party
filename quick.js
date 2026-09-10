@@ -12,7 +12,7 @@ const toastNode = document.querySelector("#toast");
 const DAY_NAMES = ["日", "一", "二", "三", "四", "五", "六"];
 const PERIOD_KEYS = ["早上", "下午", "晚上"];
 const SHORTENER_URL = "https://gather-party-link.gather-party.workers.dev";
-const SHORT_LINK_PREVIEW_VERSION = 2;
+const SHORT_LINK_PREVIEW_VERSION = 3;
 
 let auth;
 let db;
@@ -25,6 +25,8 @@ let unsubscribeResponses = null;
 let canManageSchedule = false;
 let managementToken = "";
 let managementShortUrl = "";
+let managementShortTitle = "";
+let managementPreviewVersion = 0;
 
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
@@ -193,7 +195,11 @@ async function createSchedule(event) {
     }
     await setDoc(doc(db, "quickSchedules", ref.id, "managementTokens", token), {
       createdAt: serverTimestamp(),
-      ...(managerShortUrl ? { shortUrl: managerShortUrl } : {})
+      ...(managerShortUrl ? {
+        shortUrl: managerShortUrl,
+        shortTitle: form.elements.title.value.trim(),
+        previewVersion: SHORT_LINK_PREVIEW_VERSION
+      } : {})
     });
     if (playerShortUrl) await updateDoc(ref, {
       shortPlayerUrl: playerShortUrl,
@@ -261,16 +267,27 @@ async function loadManagementAccess() {
   canManageSchedule = schedule.ownerUid === user.uid;
   managementToken = "";
   managementShortUrl = "";
+  managementShortTitle = "";
+  managementPreviewVersion = 0;
   try {
     if (!canManageSchedule) {
       const claim = await getDoc(doc(db, "quickSchedules", schedule.id, "managers", user.uid));
       canManageSchedule = claim.exists();
       if (claim.exists()) managementToken = claim.data().token || "";
     }
-    if (canManageSchedule && !managementToken) {
-      const tokens = await getDocs(collection(db, "quickSchedules", schedule.id, "managementTokens"));
-      managementToken = tokens.docs[0]?.id || "";
-      managementShortUrl = tokens.docs[0]?.data()?.shortUrl || "";
+    if (canManageSchedule) {
+      let tokenData = {};
+      if (managementToken) {
+        const tokenSnap = await getDoc(doc(db, "quickSchedules", schedule.id, "managementTokens", managementToken));
+        if (tokenSnap.exists()) tokenData = tokenSnap.data();
+      } else {
+        const tokens = await getDocs(collection(db, "quickSchedules", schedule.id, "managementTokens"));
+        managementToken = tokens.docs[0]?.id || "";
+        tokenData = tokens.docs[0]?.data() || {};
+      }
+      managementShortUrl = tokenData.shortUrl || "";
+      managementShortTitle = tokenData.shortTitle || "";
+      managementPreviewVersion = Number(tokenData.previewVersion || 0);
       if (!managementToken && schedule.ownerUid === user.uid) {
         managementToken = randomManagementToken();
         await setDoc(doc(db, "quickSchedules", schedule.id, "managementTokens", managementToken), { createdAt: serverTimestamp() });
@@ -291,9 +308,12 @@ async function ensureShortLinks() {
     const playerPromise = playerLinkNeedsRefresh
       ? createShortUrl(quickUrl(schedule.id), "player", schedule.title)
       : Promise.resolve(schedule.shortPlayerUrl);
-    const managerPromise = managementShortUrl
-      ? Promise.resolve(managementShortUrl)
-      : createShortUrl(manageUrl(schedule.id, managementToken), "manager", schedule.title);
+    const managerLinkNeedsRefresh = !managementShortUrl
+      || managementShortTitle !== schedule.title
+      || managementPreviewVersion !== SHORT_LINK_PREVIEW_VERSION;
+    const managerPromise = managerLinkNeedsRefresh
+      ? createShortUrl(manageUrl(schedule.id, managementToken), "manager", schedule.title)
+      : Promise.resolve(managementShortUrl);
     const [playerShortUrl, managerShortUrl] = await Promise.all([playerPromise, managerPromise]);
     if (playerLinkNeedsRefresh) {
       await updateDoc(doc(db, "quickSchedules", schedule.id), {
@@ -303,12 +323,17 @@ async function ensureShortLinks() {
       });
       schedule.shortPlayerUrl = playerShortUrl;
       schedule.shortPlayerTitle = schedule.title;
+      schedule.shortPlayerPreviewVersion = SHORT_LINK_PREVIEW_VERSION;
     }
-    if (!managementShortUrl) {
+    if (managerLinkNeedsRefresh) {
       await setDoc(doc(db, "quickSchedules", schedule.id, "managementTokens", managementToken), {
-        shortUrl: managerShortUrl
+        shortUrl: managerShortUrl,
+        shortTitle: schedule.title,
+        previewVersion: SHORT_LINK_PREVIEW_VERSION
       }, { merge: true });
       managementShortUrl = managerShortUrl;
+      managementShortTitle = schedule.title;
+      managementPreviewVersion = SHORT_LINK_PREVIEW_VERSION;
     }
   } catch (error) {
     console.error("短網址建立失敗，暫時使用原始網址。", error);
@@ -381,16 +406,29 @@ function openEditScheduleDialog() {
     try {
       await updateDoc(doc(db, "quickSchedules", schedule.id), changes);
       schedule = { ...schedule, ...changes };
-      if (schedule.shortPlayerTitle !== changes.title) {
-        const refreshedPlayerUrl = await createShortUrl(quickUrl(schedule.id), "player", changes.title);
-        await updateDoc(doc(db, "quickSchedules", schedule.id), {
-          shortPlayerUrl: refreshedPlayerUrl,
-          shortPlayerTitle: changes.title,
-          shortPlayerPreviewVersion: SHORT_LINK_PREVIEW_VERSION
-        });
+      if (schedule.shortPlayerTitle !== changes.title || managementShortTitle !== changes.title) {
+        const [refreshedPlayerUrl, refreshedManagerUrl] = await Promise.all([
+          createShortUrl(quickUrl(schedule.id), "player", changes.title),
+          createShortUrl(manageUrl(schedule.id, managementToken), "manager", changes.title)
+        ]);
+        await Promise.all([
+          updateDoc(doc(db, "quickSchedules", schedule.id), {
+            shortPlayerUrl: refreshedPlayerUrl,
+            shortPlayerTitle: changes.title,
+            shortPlayerPreviewVersion: SHORT_LINK_PREVIEW_VERSION
+          }),
+          setDoc(doc(db, "quickSchedules", schedule.id, "managementTokens", managementToken), {
+            shortUrl: refreshedManagerUrl,
+            shortTitle: changes.title,
+            previewVersion: SHORT_LINK_PREVIEW_VERSION
+          }, { merge: true })
+        ]);
         schedule.shortPlayerUrl = refreshedPlayerUrl;
         schedule.shortPlayerTitle = changes.title;
         schedule.shortPlayerPreviewVersion = SHORT_LINK_PREVIEW_VERSION;
+        managementShortUrl = refreshedManagerUrl;
+        managementShortTitle = changes.title;
+        managementPreviewVersion = SHORT_LINK_PREVIEW_VERSION;
       }
       dialog.close();
       renderSchedule(responses.find(item => item.id === user.uid) || null);
@@ -632,6 +670,8 @@ async function handleRoute() {
     canManageSchedule = false;
     managementToken = "";
     managementShortUrl = "";
+    managementShortTitle = "";
+    managementPreviewVersion = 0;
     unsubscribeResponses?.();
     unsubscribeResponses = null;
     renderCreate();
