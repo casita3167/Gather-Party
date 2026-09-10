@@ -85,7 +85,7 @@ function renderCreate() {
         <div class="form-grid"><label>建立者／統計者<input name="coordinatorName" maxlength="40" required placeholder="你的名稱"></label><label>實際 GM<input name="gmName" maxlength="40" placeholder="尚未確定可留白"></label></div>
         <label>給玩家的聯絡方式（選填）<input name="contact" maxlength="120" placeholder="Discord、LINE 或其他聯絡方式"></label>
         <label>給玩家的說明<textarea name="note" maxlength="800" placeholder="預計遊玩的系統、時數或其他提醒"></textarea></label>
-        <label>成團人數<input name="minPlayers" type="number" min="1" max="20" value="4" required></label>
+        <label>成團門檻<input name="minPlayers" type="number" min="1" max="20" value="4" required><small class="muted">只用來判斷哪些時段可以成團，不會限制填表人數。</small></label>
         <h3>時段範圍</h3><div class="period-settings"><label class="period-setting"><span>早上</span><input name="morning" value="08:00～12:00" required></label><label class="period-setting"><span>下午</span><input name="afternoon" value="14:00～18:00" required></label><label class="period-setting"><span>晚上</span><input name="evening" value="20:00～24:00" required></label></div>
         <p class="quick-note">玩家只會看到「早上／下午／晚上／X」四個按鈕；滑鼠移到時段上即可查看你設定的範圍。</p>
         <button class="button full" type="submit">建立快速約團表</button>
@@ -224,7 +224,7 @@ function renderSchedule(mineData) {
     <section class="schedule-banner"><div><span class="eyebrow">QUICK SCHEDULER</span><h1>${escapeHtml(schedule.title)}</h1><p>建立者／統計者：${escapeHtml(schedule.coordinatorName)}${schedule.gmName ? `・實際 GM：${escapeHtml(schedule.gmName)}` : ""}</p></div>${schedule.contact ? `<div class="contact-card"><span>給玩家的聯絡方式</span><b>${escapeHtml(schedule.contact)}</b></div>` : ""}</section>
     ${schedule.note ? `<p class="quick-note">${escapeHtml(schedule.note)}</p>` : ""}
     <div class="schedule-grid"><form id="response-form" class="quick-card"><h2>填寫我的時間</h2><p>同一天可複選早、中、晚；整天都不行請選 X。儲存後仍可隨時回來修改。</p>${periodLegendMarkup(periodRanges)}<label>玩家名稱<input name="playerName" maxlength="30" value="${escapeHtml(mineData?.playerName || localStorage.getItem("gather-party-player") || "")}" required></label><div class="choice-list">${schedule.dates.map(date => choiceRow(date, periodRanges)).join("")}</div><label>備註<textarea name="note" maxlength="500" placeholder="例如：晚上九點後才有空、這天可能需要再確認">${escapeHtml(mineData?.note || "")}</textarea></label><div class="quick-form-actions"><span class="muted">每個日期都要選擇至少一個選項</span><button class="button" type="submit">${mineData?.submitted ? "儲存變更" : "儲存我的時間"}</button></div></form>
-      <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${submitted.length} 人已填寫・滿 ${schedule.minPlayers} 人視為可成團</p><div class="best-slots" id="best-slots">${bestMarkup(best, submitted.length)}</div><div class="share-box"><input readonly value="${escapeHtml(location.href)}"><button class="button secondary" id="copy-quick" type="button">複製連結</button></div></aside>
+      <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${submitted.length} 人已填寫・填表人數不限・${schedule.minPlayers} 人同時有空即達門檻</p><div class="best-slots" id="best-slots">${bestMarkup(best, submitted.length)}</div><div class="share-box"><input readonly value="${escapeHtml(location.href)}"><button class="button secondary" id="copy-quick" type="button">複製連結</button></div></aside>
     </div>
     <section class="quick-card overview"><h2>玩家時間一覽</h2><p>每位玩家的選擇與備註會集中顯示在這裡。</p>${periodLegendMarkup(periodRanges)}<div id="overview-content">${overviewMarkup(submitted)}</div></section>
   </main>`;
@@ -253,7 +253,7 @@ function refreshOverview() {
   const count = document.querySelector("#response-count");
   const best = document.querySelector("#best-slots");
   const overview = document.querySelector("#overview-content");
-  if (count) count.textContent = `${submitted.length} 人已填寫・滿 ${schedule.minPlayers} 人視為可成團`;
+  if (count) count.textContent = `${submitted.length} 人已填寫・填表人數不限・${schedule.minPlayers} 人同時有空即達門檻`;
   if (best) best.innerHTML = bestMarkup(bestSlots(submitted), submitted.length);
   if (overview) overview.innerHTML = overviewMarkup(submitted);
 }
