@@ -14,9 +14,9 @@ const root = document.querySelector("#app");
 const toastNode = document.querySelector("#toast");
 const PERIODS = [
   ["全天", "整天皆可"],
-  ["早上", "08:00～12:00"],
-  ["下午", "14:00～18:00"],
-  ["晚上", "20:00～24:00"],
+  ["早上", "09:00～12:00"],
+  ["下午", "13:00～18:00"],
+  ["晚上", "20:30～24:00"],
   ["時間由GM決定", "由 GM 決定實際時間"]
 ];
 const JOIN_STATUS = { pending: "待處理", approved: "核准", rejected: "婉拒" };
