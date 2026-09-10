@@ -1,8 +1,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import {
-  addDoc, collection, doc, getDoc, getFirestore, onSnapshot,
-  serverTimestamp, setDoc
+  addDoc, collection, doc, getDoc, getDocs, getFirestore, onSnapshot,
+  query, serverTimestamp, setDoc, where
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { holidayFor } from "./taiwan-holidays.js";
@@ -69,6 +69,7 @@ function renderCreate() {
   const month = monthCursor.getMonth() + 1;
   root.innerHTML = `<main class="quick-shell">${brand()}
     <section class="quick-head"><span class="eyebrow">QUICK SCHEDULER</span><h1>一眼找出能跑團的時間。</h1><p>建立者可以只是負責統計的人，不必是實際 GM。選好候選日期與早、中、晚的範圍，再把連結交給玩家即可。</p></section>
+    <section class="quick-card my-schedules"><div class="my-schedules-head"><h2>我的快速約團表</h2><p>這台裝置建立的約團表會保留在這裡，不需要 GM 權限。</p></div><div id="my-schedules-list" class="my-schedules-list"><span class="muted">正在讀取⋯</span></div></section>
     <form id="create-quick" class="quick-layout">
       <section class="quick-card"><h2>點選候選日期</h2><p>直接在月曆點日期，可跨月份選擇，最多 14 天。</p><div class="date-picker-head"><h3>${year} 年 ${month} 月</h3><div class="date-picker-nav"><button class="mini-button" id="quick-prev" type="button">‹</button><button class="mini-button" id="quick-today" type="button">今</button><button class="mini-button" id="quick-next" type="button">›</button></div></div><div id="quick-calendar">${calendarMarkup()}</div><div class="selected-dates" id="selected-dates">${selectedDatesMarkup()}</div></section>
       <section class="quick-card sticky"><h2>團務與聯絡資訊</h2><p>實際 GM 與負責統計的人可以不同。</p>
@@ -85,6 +86,24 @@ function renderCreate() {
   </main>`;
   bindCreateCalendar();
   document.querySelector("#create-quick").addEventListener("submit", createSchedule);
+  loadMySchedules();
+}
+
+async function loadMySchedules() {
+  const container = document.querySelector("#my-schedules-list");
+  if (!container || !user) return;
+  try {
+    const result = await getDocs(query(collection(db, "quickSchedules"), where("ownerUid", "==", user.uid)));
+    const items = result.docs
+      .map(item => ({ id: item.id, ...item.data() }))
+      .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+    container.innerHTML = items.length
+      ? items.map(item => `<a class="my-schedule-row" href="#quick=${item.id}"><span><b>${escapeHtml(item.title)}</b><small>${item.dates?.length ? `${escapeHtml(dateLabel(item.dates[0], true))}${item.dates.length > 1 ? ` 起・${item.dates.length} 個候選日` : ""}` : "日期未定"}</small></span><span class="open-schedule">開啟 →</span></a>`).join("")
+      : '<div class="empty small">還沒有建立過快速約團表。</div>';
+  } catch (error) {
+    console.error(error);
+    container.innerHTML = '<div class="empty small">目前無法讀取清單，請確認新版 Firestore Rules 已發布。</div>';
+  }
 }
 
 function selectedDatesMarkup() {
@@ -177,10 +196,10 @@ function renderSchedule(mineData) {
   root.innerHTML = `<main class="quick-shell">${brand()}
     <section class="schedule-banner"><div><span class="eyebrow">QUICK SCHEDULER</span><h1>${escapeHtml(schedule.title)}</h1><p>建立者／統計者：${escapeHtml(schedule.coordinatorName)}${schedule.gmName ? `・實際 GM：${escapeHtml(schedule.gmName)}` : ""}</p></div>${schedule.contact ? `<div class="contact-card"><span>給玩家的聯絡方式</span><b>${escapeHtml(schedule.contact)}</b></div>` : ""}</section>
     ${schedule.note ? `<p class="quick-note">${escapeHtml(schedule.note)}</p>` : ""}
-    <div class="schedule-grid"><form id="response-form" class="quick-card"><h2>填寫我的時間</h2><p>同一天可複選早、中、晚；整天都不行請選 X。儲存後仍可隨時回來修改。</p><label>玩家名稱<input name="playerName" maxlength="30" value="${escapeHtml(mineData?.playerName || localStorage.getItem("gather-party-player") || "")}" required></label><div class="choice-list">${schedule.dates.map(date => choiceRow(date, periodRanges)).join("")}</div><label>備註<textarea name="note" maxlength="500" placeholder="例如：晚上九點後才有空、這天可能需要再確認">${escapeHtml(mineData?.note || "")}</textarea></label><div class="quick-form-actions"><span class="muted">每個日期都要選擇至少一個選項</span><button class="button" type="submit">${mineData?.submitted ? "儲存變更" : "儲存我的時間"}</button></div></form>
+    <div class="schedule-grid"><form id="response-form" class="quick-card"><h2>填寫我的時間</h2><p>同一天可複選早、中、晚；整天都不行請選 X。儲存後仍可隨時回來修改。</p>${periodLegendMarkup(periodRanges)}<label>玩家名稱<input name="playerName" maxlength="30" value="${escapeHtml(mineData?.playerName || localStorage.getItem("gather-party-player") || "")}" required></label><div class="choice-list">${schedule.dates.map(date => choiceRow(date, periodRanges)).join("")}</div><label>備註<textarea name="note" maxlength="500" placeholder="例如：晚上九點後才有空、這天可能需要再確認">${escapeHtml(mineData?.note || "")}</textarea></label><div class="quick-form-actions"><span class="muted">每個日期都要選擇至少一個選項</span><button class="button" type="submit">${mineData?.submitted ? "儲存變更" : "儲存我的時間"}</button></div></form>
       <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${submitted.length} 人已填寫・滿 ${schedule.minPlayers} 人視為可成團</p><div class="best-slots" id="best-slots">${bestMarkup(best, submitted.length)}</div><div class="share-box"><input readonly value="${escapeHtml(location.href)}"><button class="button secondary" id="copy-quick" type="button">複製連結</button></div></aside>
     </div>
-    <section class="quick-card overview"><h2>玩家時間一覽</h2><p>每位玩家的選擇與備註會集中顯示在這裡。</p><div id="overview-content">${overviewMarkup(submitted)}</div></section>
+    <section class="quick-card overview"><h2>玩家時間一覽</h2><p>每位玩家的選擇與備註會集中顯示在這裡。</p>${periodLegendMarkup(periodRanges)}<div id="overview-content">${overviewMarkup(submitted)}</div></section>
   </main>`;
   bindChoiceButtons();
   const responseForm = document.querySelector("#response-form");
@@ -189,6 +208,11 @@ function renderSchedule(mineData) {
   document.querySelector("#copy-quick").onclick = async () => {
     try { await navigator.clipboard.writeText(location.href); toast("已複製分享連結"); } catch { toast("請手動複製網址。"); }
   };
+}
+
+function periodLegendMarkup(ranges) {
+  const defaults = { "早上": "08:00～12:00", "下午": "14:00～18:00", "晚上": "20:00～24:00" };
+  return `<div class="period-legend" aria-label="本團時段範圍">${PERIOD_KEYS.map(period => `<span><b>${period}</b>${escapeHtml(ranges[period] || defaults[period])}</span>`).join("")}</div>`;
 }
 
 function bestMarkup(items, total) {
