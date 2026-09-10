@@ -44,6 +44,8 @@
 .period-setting { display:grid; grid-template-columns:55px 1fr; gap:10px; align-items:center; }
 .period-setting span { font-weight:850; }
 .quick-note { padding:12px; border-radius:11px; color:#475467; background:#f6f7f9; font-size:.84rem; line-height:1.6; }
+.quick-back { display:inline-flex; align-items:center; min-height:42px; margin:0 0 12px; padding:9px 13px; border:1px solid #d9d5f8; border-radius:11px; color:var(--primary); background:var(--primary-soft); font-weight:850; }
+.quick-back:hover { color:white; border-color:var(--primary); background:var(--primary); }
 .schedule-banner { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; padding:24px; margin-bottom:16px; border-radius:22px; color:white; background:#171c30; }
 .schedule-banner h1 { margin:6px 0; font-size:clamp(2rem,5vw,3.3rem); letter-spacing:-.045em; }
 .schedule-banner p { margin:0; color:#cbd0df; }
@@ -83,6 +85,7 @@
 .response-note { margin-top:4px; color:var(--muted); font-size:.72rem; white-space:pre-wrap; }
 .share-box { display:flex; gap:7px; margin-top:15px; }
 .share-box input { min-width:0; color:var(--muted); font-size:.84rem; }
+.random-link-note { display:block; margin-top:5px; color:var(--muted); font-size:.76rem; font-weight:650; }
 .management-box { margin-top:18px; padding:14px; border:1px solid #f1c8c4; border-radius:13px; background:#fff8f7; }
 .management-box h3 { margin:0 0 5px; color:#7a271a; }
 .management-box p { margin:0; color:var(--muted); font-size:.82rem; line-height:1.5; }
