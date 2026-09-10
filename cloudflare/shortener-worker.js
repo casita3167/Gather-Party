@@ -53,9 +53,13 @@ async function uniqueCode(env, prefix) {
   throw new Error("無法產生不重複的短網址");
 }
 
-function playerPreviewPage(requestUrl, entry) {
-  const title = (entry.title || "快速約團").trim().slice(0, 80);
-  const description = (entry.description || "打開月曆，填寫你可以跑團的日期與時段。").trim().slice(0, 160);
+function previewPage(requestUrl, entry, prefix) {
+  const baseTitle = (entry.title || "快速約團").trim().slice(0, 80);
+  const isManager = prefix === "m";
+  const title = isManager ? `${baseTitle}-管理` : baseTitle;
+  const description = isManager
+    ? "私人管理連結，持有者可編輯約團設定與管理玩家登記，請勿轉傳。"
+    : (entry.description || "打開月曆，填寫你可以跑團的日期與時段。").trim().slice(0, 160);
   const safeTarget = escapeHtml(entry.target);
   const safeTitle = escapeHtml(title);
   const safeDescription = escapeHtml(description);
@@ -66,6 +70,8 @@ function playerPreviewPage(requestUrl, entry) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#6657e8">
+  <meta name="robots" content="noindex,nofollow">
   <title>${safeTitle}</title>
   <meta name="description" content="${safeDescription}">
   <meta property="og:title" content="${safeTitle}">
@@ -84,7 +90,7 @@ function playerPreviewPage(requestUrl, entry) {
 </html>`, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "public, max-age=300"
+      "Cache-Control": isManager ? "no-store" : "public, max-age=300"
     }
   });
 }
@@ -135,8 +141,7 @@ export default {
         if (!validTarget(entry.target, prefix === "m" ? "manager" : "player")) {
           return new Response("約團連結資料不正確。", { status: 400 });
         }
-        if (prefix === "m") return Response.redirect(entry.target, 302);
-        return playerPreviewPage(request.url, entry);
+        return previewPage(request.url, entry, prefix);
       }
       if (requestUrl.pathname === "/") {
         return new Response("Gather Party 短網址服務運作中", {
