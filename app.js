@@ -170,7 +170,7 @@ function statusInfo(status = "待協調") {
 }
 
 function renderHeader() {
-  return `<header class="brandbar"><a class="brand" href="#"><span class="brandmark" aria-hidden="true">⚄</span><span>Gather Party<small>用 GitHub 把團員湊在一起</small></span></a><nav><a href="#recruiting">時間協調</a><a href="#calendar-section">正式場次</a><button class="button secondary compact" id="refresh" type="button">重新整理</button></nav></header>`;
+  return `<header class="brandbar"><a class="brand" href="#"><span class="brandmark" aria-hidden="true">⚄</span><span>Gather Party<small>用 GitHub 把團員湊在一起</small></span></a><nav><a href="#recruiting">時間協調</a><a href="#calendar-section">正式場次</a><a href="./legacy.html">舊版快速約團</a><button class="button secondary compact" id="refresh" type="button">重新整理</button></nav></header>`;
 }
 
 function renderIssueCard(issue) {
@@ -251,4 +251,8 @@ async function load(manual = false) {
   }
 }
 
-load();
+if (/^#event=[A-Za-z0-9]+$/.test(location.hash)) {
+  location.replace(`./legacy.html${location.hash}`);
+} else {
+  load();
+}
