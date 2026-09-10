@@ -39,6 +39,7 @@ nav a:hover,nav a.active { color:var(--primary); }
 .portal-head h1 { margin:0; font-size:clamp(2.3rem,6vw,4.4rem); line-height:1.04; letter-spacing:-.055em; }
 .portal-head p { margin:14px 0 0; color:var(--muted); font-size:1.05rem; line-height:1.7; }
 .portal-grid { max-width:920px; display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:0 auto; }
+.portal-grid.single { max-width:620px; grid-template-columns:1fr; }
 .portal-card { min-height:230px; display:flex; align-items:flex-start; gap:18px; padding:26px; border:1px solid var(--line); border-radius:24px; background:white; box-shadow:var(--shadow); transition:.18s ease; }
 .portal-card:hover { border-color:#c8c3f4; transform:translateY(-3px); box-shadow:0 18px 42px rgb(25 32 51 / .11); }
 .portal-icon { width:52px; height:52px; display:grid; place-items:center; flex:0 0 auto; border-radius:16px; color:white; background:var(--primary); font-size:1.6rem; font-weight:900; }
