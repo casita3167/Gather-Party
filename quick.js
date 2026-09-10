@@ -307,7 +307,7 @@ function renderSchedule(mineData) {
     <section class="schedule-banner"><div><span class="eyebrow">QUICK SCHEDULER</span><h1>${escapeHtml(schedule.title)}</h1><p>建立者／統計者：${escapeHtml(schedule.coordinatorName)}${schedule.gmName ? `・實際 GM：${escapeHtml(schedule.gmName)}` : ""}</p></div>${schedule.contact ? `<div class="contact-card"><span>給玩家的聯絡方式</span><b>${escapeHtml(schedule.contact)}</b></div>` : ""}</section>
     ${schedule.note ? `<p class="quick-note">${escapeHtml(schedule.note)}</p>` : ""}
     <div class="schedule-grid"><form id="response-form" class="quick-card"><h2>填寫我的時間</h2><p>先從月曆點選你要填寫的日期，再選早上、下午、晚上或 X。儲存後仍可隨時回來修改日期。</p>${periodLegendMarkup(periodRanges)}<label>玩家名稱<input name="playerName" maxlength="30" value="${escapeHtml(mineData?.playerName || localStorage.getItem("gather-party-player") || "")}" required></label><div class="date-picker-head"><h3 id="response-month-title">${responseMonthCursor.getFullYear()} 年 ${responseMonthCursor.getMonth() + 1} 月</h3><div class="date-picker-nav"><button class="mini-button" id="response-prev" type="button">‹</button><button class="mini-button" id="response-today" type="button">今</button><button class="mini-button" id="response-next" type="button">›</button></div></div><div id="response-calendar">${responseCalendarMarkup()}</div><h3>已選日期與時段</h3><div class="choice-list" id="response-choice-list">${responseChoiceListMarkup(periodRanges)}</div><label>備註<textarea name="note" maxlength="500" placeholder="例如：晚上九點後才有空、這天可能需要再確認">${escapeHtml(mineData?.note || "")}</textarea></label><div class="quick-form-actions"><span class="muted">至少選擇一個日期，且每個日期都要選時段或 X</span><button class="button" type="submit">${mineData?.submitted ? "儲存變更" : "儲存我的時間"}</button></div></form>
-      <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${submitted.length} 人已填寫・填表人數不限・${schedule.minPlayers} 人同時有空即達門檻</p><div class="best-slots" id="best-slots">${bestMarkup(best, submitted.length)}</div><label>玩家填表連結<small class="random-link-note">使用 Cloudflare 隨機短網址，不會顯示 GitHub 名稱。</small><div class="share-box"><input id="player-link" readonly value="${escapeHtml(playerLink)}" aria-label="玩家填表短網址"><button class="button secondary" id="copy-quick" type="button">複製</button></div></label>${canManageSchedule ? `<div class="management-box"><h3>私人管理連結</h3><p>換裝置時用這條隨機短網址取回管理權限，請勿傳給玩家。</p>${privateLink ? `<div class="share-box"><input id="manager-link" readonly value="${escapeHtml(privateLink)}" aria-label="私人管理短網址"><button class="button secondary" id="copy-manager" type="button">複製</button></div>` : '<p class="muted">私人管理連結建立中。</p>'}<button class="button reject full" id="delete-current-schedule" type="button">刪除這張約團表</button></div>` : ""}</aside>
+      <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${submitted.length} 人已填寫・填表人數不限・${schedule.minPlayers} 人同時有空即達門檻</p><div class="best-slots" id="best-slots">${bestMarkup(best, submitted.length)}</div><label>玩家填表連結<div class="share-box"><input id="player-link" readonly value="${escapeHtml(playerLink)}" aria-label="玩家填表短網址"><button class="button secondary" id="copy-quick" type="button">複製</button></div></label>${canManageSchedule ? `<div class="management-box"><h3>私人管理連結</h3><p>換裝置時用這條隨機短網址取回管理權限，請勿傳給玩家。</p>${privateLink ? `<div class="share-box"><input id="manager-link" readonly value="${escapeHtml(privateLink)}" aria-label="私人管理短網址"><button class="button secondary" id="copy-manager" type="button">複製</button></div>` : '<p class="muted">私人管理連結建立中。</p>'}<button class="button reject full" id="delete-current-schedule" type="button">刪除這張約團表</button></div>` : ""}</aside>
     </div>
     <section class="quick-card overview"><h2>玩家時間一覽</h2><p>每位玩家的選擇與備註會集中顯示在這裡。</p>${periodLegendMarkup(periodRanges)}<div id="overview-content">${overviewMarkup(submitted)}</div></section>
   </main>`;
@@ -346,6 +346,21 @@ function refreshOverview() {
   if (count) count.textContent = `${submitted.length} 人已填寫・填表人數不限・${schedule.minPlayers} 人同時有空即達門檻`;
   if (best) best.innerHTML = bestMarkup(bestSlots(submitted), submitted.length);
   if (overview) overview.innerHTML = overviewMarkup(submitted);
+  const calendar = document.querySelector("#response-calendar");
+  if (calendar) {
+    calendar.innerHTML = responseCalendarMarkup();
+    bindResponseDayButtons(schedule.periods || {});
+  }
+}
+
+function calendarPlayersMarkup(date) {
+  const availablePlayers = responses.filter(player =>
+    player.submitted && PERIOD_KEYS.some(period => player.choices?.[date]?.includes(period))
+  );
+  if (!availablePlayers.length) return "";
+  const names = availablePlayers.map(player => player.playerName || "玩家");
+  const visible = names.slice(0, 3);
+  return `<span class="calendar-players" aria-label="已有空的玩家：${escapeHtml(names.join("、"))}">${visible.map(name => `<span class="calendar-player" title="${escapeHtml(name)}">${escapeHtml(Array.from(name.trim())[0] || "玩")}</span>`).join("")}${names.length > 3 ? `<span class="calendar-player more">+${names.length - 3}</span>` : ""}</span>`;
 }
 
 function responseCalendarMarkup() {
@@ -361,7 +376,7 @@ function responseCalendarMarkup() {
     const holiday = holidayFor(date);
     const selected = choices.has(date);
     const dayNote = holiday || (date === today ? "今天" : "");
-    cells.push(`<button class="quick-day ${selected ? "selected" : ""} ${holiday ? "holiday" : ""} ${date === today ? "today" : ""}" type="button" data-response-date="${date}" title="${escapeHtml(dayNote || date)}" aria-pressed="${selected}"><span>${day}</span>${dayNote ? `<small>${escapeHtml(dayNote)}</small>` : ""}</button>`);
+    cells.push(`<button class="quick-day ${selected ? "selected" : ""} ${holiday ? "holiday" : ""} ${date === today ? "today" : ""}" type="button" data-response-date="${date}" title="${escapeHtml(dayNote || date)}" aria-pressed="${selected}"><span>${day}</span>${calendarPlayersMarkup(date)}${dayNote ? `<small>${escapeHtml(dayNote)}</small>` : ""}</button>`);
   }
   return `<div class="quick-calendar"><div class="quick-weekday">一</div><div class="quick-weekday">二</div><div class="quick-weekday">三</div><div class="quick-weekday">四</div><div class="quick-weekday">五</div><div class="quick-weekday">六</div><div class="quick-weekday">日</div>${cells.join("")}</div>`;
 }
