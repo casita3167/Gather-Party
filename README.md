@@ -2,6 +2,8 @@
 
 網站會讀取 GitHub Issue、留言與 `adventures/` 裡的 Markdown，在 GitHub Pages 顯示目前招募、時間交集與正式場次。
 
+原本使用 Firebase 的快速約團頁保留在 `legacy.html`；舊分享網址的 `#event=...` 會自動轉過去，因此既有約團資料仍可使用。
+
 ## 使用流程
 
 ### 1. 發起揪團
