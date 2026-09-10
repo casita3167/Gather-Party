@@ -35,6 +35,17 @@ nav a:hover,nav a.active { color:var(--primary); }
 .page-head,.admin-head { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; margin-bottom:22px; }
 .page-head h1,.admin-head h1 { margin:0; font-size:clamp(2.2rem,5vw,3.8rem); line-height:1; letter-spacing:-.05em; }
 .page-head p,.admin-head p { margin:12px 0 0; color:var(--muted); line-height:1.6; }
+.portal-head { max-width:720px; margin:9vh auto 28px; text-align:center; }
+.portal-head h1 { margin:0; font-size:clamp(2.3rem,6vw,4.4rem); line-height:1.04; letter-spacing:-.055em; }
+.portal-head p { margin:14px 0 0; color:var(--muted); font-size:1.05rem; line-height:1.7; }
+.portal-grid { max-width:920px; display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:0 auto; }
+.portal-card { min-height:230px; display:flex; align-items:flex-start; gap:18px; padding:26px; border:1px solid var(--line); border-radius:24px; background:white; box-shadow:var(--shadow); transition:.18s ease; }
+.portal-card:hover { border-color:#c8c3f4; transform:translateY(-3px); box-shadow:0 18px 42px rgb(25 32 51 / .11); }
+.portal-icon { width:52px; height:52px; display:grid; place-items:center; flex:0 0 auto; border-radius:16px; color:white; background:var(--primary); font-size:1.6rem; font-weight:900; }
+.portal-card.admin .portal-icon { color:var(--primary); background:var(--primary-soft); }
+.portal-card h2 { margin:3px 0 8px; font-size:1.55rem; }
+.portal-card p { min-height:78px; margin:0 0 18px; color:var(--muted); line-height:1.65; }
+.portal-card b { color:var(--primary); }
 .view-actions,.admin-head>div:last-child { display:flex; gap:8px; }
 .calendar-panel,.detail-card,.join-card,.login-card,.admin-content { border:1px solid var(--line); border-radius:23px; background:var(--card); box-shadow:var(--shadow); }
 .calendar-panel { padding:20px; }
@@ -199,6 +210,10 @@ dialog::backdrop { background:rgb(16 24 40 / .55); backdrop-filter:blur(3px); }
 @media (max-width:620px) {
   .shell,.shell.narrow { width:min(100% - 22px,1160px); padding-top:13px; }
   .topbar { align-items:flex-start; margin-bottom:25px; }
+  .portal-head { margin-top:5vh; text-align:left; }
+  .portal-grid { grid-template-columns:1fr; }
+  .portal-card { min-height:0; padding:21px; }
+  .portal-card p { min-height:0; }
   nav { gap:12px; }
   nav a:first-child { display:none; }
   .page-head,.admin-head { align-items:flex-start; flex-direction:column; }
