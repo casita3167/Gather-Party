@@ -238,11 +238,12 @@ async function openSchedule(id) {
 }
 
 async function claimManagementAccess(id, token) {
-  await setDoc(doc(db, "quickSchedules", id, "managers", user.uid), {
-    token,
-    claimedAt: serverTimestamp()
-  });
-  managementToken = token;
+  const managerRef = doc(db, "quickSchedules", id, "managers", user.uid);
+  const existing = await getDoc(managerRef);
+  if (!existing.exists()) {
+    await setDoc(managerRef, { token, claimedAt: serverTimestamp() });
+  }
+  managementToken = existing.exists() ? (existing.data().token || token) : token;
   canManageSchedule = true;
 }
 
@@ -307,7 +308,7 @@ function renderSchedule(mineData) {
     <section class="schedule-banner"><div><span class="eyebrow">QUICK SCHEDULER</span><h1>${escapeHtml(schedule.title)}</h1><p>建立者／統計者：${escapeHtml(schedule.coordinatorName)}${schedule.gmName ? `・實際 GM：${escapeHtml(schedule.gmName)}` : ""}</p></div>${schedule.contact ? `<div class="contact-card"><span>給玩家的聯絡方式</span><b>${escapeHtml(schedule.contact)}</b></div>` : ""}</section>
     ${schedule.note ? `<p class="quick-note">${escapeHtml(schedule.note)}</p>` : ""}
     <div class="schedule-grid"><form id="response-form" class="quick-card"><h2>填寫我的時間</h2><p>先從月曆點選你要填寫的日期，再選早上、下午、晚上或 X。儲存後仍可隨時回來修改日期。</p>${periodLegendMarkup(periodRanges)}<label>玩家名稱<input name="playerName" maxlength="30" value="${escapeHtml(mineData?.playerName || localStorage.getItem("gather-party-player") || "")}" required></label><div class="date-picker-head"><h3 id="response-month-title">${responseMonthCursor.getFullYear()} 年 ${responseMonthCursor.getMonth() + 1} 月</h3><div class="date-picker-nav"><button class="mini-button" id="response-prev" type="button">‹</button><button class="mini-button" id="response-today" type="button">今</button><button class="mini-button" id="response-next" type="button">›</button></div></div><div id="response-calendar">${responseCalendarMarkup()}</div><h3>已選日期與時段</h3><div class="choice-list" id="response-choice-list">${responseChoiceListMarkup(periodRanges)}</div><label>備註<textarea name="note" maxlength="500" placeholder="例如：晚上九點後才有空、這天可能需要再確認">${escapeHtml(mineData?.note || "")}</textarea></label><div class="quick-form-actions"><span class="muted">至少選擇一個日期，且每個日期都要選時段或 X</span><button class="button" type="submit">${mineData?.submitted ? "儲存變更" : "儲存我的時間"}</button></div></form>
-      <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${submitted.length} 人已填寫・填表人數不限・${schedule.minPlayers} 人同時有空即達門檻</p><div class="best-slots" id="best-slots">${bestMarkup(best, submitted.length)}</div><label>玩家填表連結<div class="share-box"><input id="player-link" readonly value="${escapeHtml(playerLink)}" aria-label="玩家填表短網址"><button class="button secondary" id="copy-quick" type="button">複製</button></div></label>${canManageSchedule ? `<div class="management-box"><h3>私人管理連結</h3><p>換裝置時用這條隨機短網址取回管理權限，請勿傳給玩家。</p>${privateLink ? `<div class="share-box"><input id="manager-link" readonly value="${escapeHtml(privateLink)}" aria-label="私人管理短網址"><button class="button secondary" id="copy-manager" type="button">複製</button></div>` : '<p class="muted">私人管理連結建立中。</p>'}<button class="button reject full" id="delete-current-schedule" type="button">刪除這張約團表</button></div>` : ""}</aside>
+      <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${submitted.length} 人已填寫・填表人數不限・${schedule.minPlayers} 人同時有空即達門檻</p><div class="best-slots" id="best-slots">${bestMarkup(best, submitted.length)}</div><label>玩家填表連結<div class="share-box"><input id="player-link" readonly value="${escapeHtml(playerLink)}" aria-label="玩家填表短網址"><button class="button secondary" id="copy-quick" type="button">複製</button></div></label>${canManageSchedule ? `<div class="management-box"><h3>私人管理連結</h3><p>換裝置時用這條隨機短網址取回管理權限，請勿傳給玩家。</p>${privateLink ? `<div class="share-box"><input id="manager-link" readonly value="${escapeHtml(privateLink)}" aria-label="私人管理短網址"><button class="button secondary" id="copy-manager" type="button">複製</button></div>` : '<p class="muted">私人管理連結建立中。</p>'}<div class="management-actions"><button class="button secondary full" id="edit-current-schedule" type="button">編輯約團設定</button><button class="button reject full" id="delete-current-schedule" type="button">刪除這張約團表</button></div></div>` : ""}</aside>
     </div>
     <section class="quick-card overview"><h2>玩家時間一覽</h2><p>每位玩家的選擇與備註會集中顯示在這裡。</p>${periodLegendMarkup(periodRanges)}<div id="overview-content">${overviewMarkup(submitted)}</div></section>
   </main>`;
@@ -323,9 +324,54 @@ function renderSchedule(mineData) {
   document.querySelector("#copy-manager")?.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(privateLink); toast("已複製私人管理連結"); } catch { toast("請手動複製網址。"); }
   });
+  document.querySelector("#edit-current-schedule")?.addEventListener("click", openEditScheduleDialog);
   document.querySelector("#delete-current-schedule")?.addEventListener("click", event => {
     deleteQuickSchedule(schedule.id, schedule.title, event.currentTarget);
   });
+}
+
+function openEditScheduleDialog() {
+  if (!canManageSchedule) return;
+  const dialog = document.createElement("dialog");
+  dialog.id = "edit-schedule-dialog";
+  const periods = schedule.periods || {};
+  dialog.innerHTML = `<form method="dialog" class="dialog-card" id="edit-schedule-form"><div class="dialog-head"><div><span class="eyebrow">MANAGEMENT</span><h2>編輯約團設定</h2></div><button class="icon-button" type="button" data-close aria-label="關閉">×</button></div><label>團務名稱<input name="title" maxlength="80" value="${escapeHtml(schedule.title)}" required></label><div class="form-grid"><label>建立者／統計者<input name="coordinatorName" maxlength="40" value="${escapeHtml(schedule.coordinatorName)}" required></label><label>實際 GM<input name="gmName" maxlength="40" value="${escapeHtml(schedule.gmName || "")}" placeholder="尚未確定可留白"></label></div><label>給玩家的聯絡方式（選填）<input name="contact" maxlength="120" value="${escapeHtml(schedule.contact || "")}"></label><label>給玩家的說明<textarea name="note" maxlength="800">${escapeHtml(schedule.note || "")}</textarea></label><label>成團門檻<input name="minPlayers" type="number" min="1" max="20" value="${Number(schedule.minPlayers || 1)}" required><small class="muted">只影響可成團時段判斷，不限制填表人數。</small></label><h3>時段範圍</h3><div class="period-settings"><label class="period-setting"><span>早上</span><input name="morning" value="${escapeHtml(periods["早上"] || "09:00～12:00")}" required></label><label class="period-setting"><span>下午</span><input name="afternoon" value="${escapeHtml(periods["下午"] || "13:00～18:00")}" required></label><label class="period-setting"><span>晚上</span><input name="evening" value="${escapeHtml(periods["晚上"] || "20:30～24:00")}" required></label></div><div class="dialog-actions"><button class="button secondary" type="button" data-close>取消</button><button class="button" type="submit">儲存設定</button></div></form>`;
+  root.appendChild(dialog);
+  dialog.showModal();
+  dialog.querySelectorAll("[data-close]").forEach(button => button.onclick = () => dialog.close());
+  dialog.addEventListener("close", () => dialog.remove());
+  dialog.querySelector("#edit-schedule-form").onsubmit = async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector("button[type=submit]");
+    button.disabled = true;
+    const periods = {
+      "早上": form.morning.value.trim(),
+      "下午": form.afternoon.value.trim(),
+      "晚上": form.evening.value.trim()
+    };
+    const changes = {
+      title: form.elements.title.value.trim(),
+      coordinatorName: form.coordinatorName.value.trim(),
+      gmName: form.gmName.value.trim(),
+      contact: form.contact.value.trim(),
+      note: form.note.value.trim(),
+      minPlayers: Number(form.minPlayers.value),
+      periods,
+      updatedAt: serverTimestamp()
+    };
+    try {
+      await updateDoc(doc(db, "quickSchedules", schedule.id), changes);
+      schedule = { ...schedule, ...changes };
+      dialog.close();
+      renderSchedule(responses.find(item => item.id === user.uid) || null);
+      toast("約團設定已更新");
+    } catch (error) {
+      console.error(error);
+      toast("設定儲存失敗，請稍後再試。");
+      button.disabled = false;
+    }
+  };
 }
 
 function periodLegendMarkup(ranges) {
@@ -501,29 +547,41 @@ function overviewMarkup(players) {
   if (!players.length) return '<div class="empty">目前還沒有人填寫。</div>';
   return `<div class="player-availability-grid">${players.map(player => {
     const dates = Object.keys(player.choices || {}).sort();
-    const deleteButton = player.id === user?.uid ? `<button class="delete-my-response" type="button" data-response-id="${escapeHtml(player.id)}" aria-label="刪除我的填寫" title="刪除我的填寫">×</button>` : "";
+    const canDelete = player.id === user?.uid || canManageSchedule;
+    const deleteLabel = player.id === user?.uid ? "刪除我的填寫" : `刪除 ${player.playerName} 的登記`;
+    const deleteButton = canDelete ? `<button class="delete-my-response" type="button" data-response-id="${escapeHtml(player.id)}" data-player-name="${escapeHtml(player.playerName)}" aria-label="${escapeHtml(deleteLabel)}" title="${escapeHtml(deleteLabel)}">×</button>` : "";
     return `<article class="player-availability"><header><h3>${escapeHtml(player.playerName)}</h3>${deleteButton}</header>${player.note ? `<p class="response-note">${escapeHtml(player.note)}</p>` : ""}<div>${dates.map(date => { const values = player.choices?.[date] || []; const label = values.includes("X") ? "X" : values.join("／"); return `<span class="player-date-choice"><b>${escapeHtml(dateLabel(date, true))}</b><i class="choice-mark ${values.includes("X") ? "no" : ""}">${escapeHtml(label || "未選時段")}</i></span>`; }).join("")}</div></article>`;
   }).join("")}</div>`;
 }
 
 function bindOverviewActions() {
-  document.querySelector(".delete-my-response")?.addEventListener("click", async event => {
-    const button = event.currentTarget;
-    if (!user || button.dataset.responseId !== user.uid) return;
-    if (!window.confirm("確定要刪除自己的填寫資料嗎？日期、時段與備註都會被移除。")) return;
-    button.disabled = true;
+  document.querySelectorAll(".delete-my-response").forEach(button => button.addEventListener("click", async event => {
+    const target = event.currentTarget;
+    const responseId = target.dataset.responseId;
+    const isMine = responseId === user?.uid;
+    if (!user || (!isMine && !canManageSchedule)) return;
+    const playerName = target.dataset.playerName || "這位玩家";
+    const message = isMine
+      ? "確定要刪除自己的填寫資料嗎？日期、時段與備註都會被移除。"
+      : `確定要刪除「${playerName}」的登記嗎？日期、時段與備註都會被移除。`;
+    if (!window.confirm(message)) return;
+    target.disabled = true;
     try {
-      await deleteDoc(doc(db, "quickSchedules", schedule.id, "responses", user.uid));
-      responses = responses.filter(player => player.id !== user.uid);
-      choices.clear();
-      renderSchedule(null);
-      toast("你的填寫資料已刪除");
+      await deleteDoc(doc(db, "quickSchedules", schedule.id, "responses", responseId));
+      responses = responses.filter(player => player.id !== responseId);
+      if (isMine) {
+        choices.clear();
+        renderSchedule(null);
+      } else {
+        refreshOverview();
+      }
+      toast(isMine ? "你的填寫資料已刪除" : `${playerName} 的登記已刪除`);
     } catch (error) {
       console.error(error);
       toast("刪除失敗，請稍後再試。");
-      button.disabled = false;
+      target.disabled = false;
     }
-  });
+  }));
 }
 
 async function handleRoute() {
