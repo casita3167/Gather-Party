@@ -8,7 +8,7 @@ import {
   onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
-import { holidayFor, holidaysInMonth } from "./taiwan-holidays.js";
+import { holidayFor, holidaysInMonth } from "./taiwan-holidays.js?v=20260910-4";
 
 const root = document.querySelector("#app");
 const toastNode = document.querySelector("#toast");
@@ -34,6 +34,14 @@ let adminEventsLoaded = false;
 
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
+}
+
+function taiwanTodayKey() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function safeUrl(value = "") {
@@ -111,8 +119,7 @@ function calendarHtml() {
   const month = monthCursor.getMonth();
   const first = (new Date(year, month, 1).getDay() + 6) % 7;
   const total = new Date(year, month + 1, 0).getDate();
-  const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const today = taiwanTodayKey();
   const cells = [];
   for (let i = 0; i < first; i++) cells.push('<div class="calendar-day outside"></div>');
   for (let day = 1; day <= total; day++) {
