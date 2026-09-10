@@ -52,10 +52,12 @@ function route() {
 }
 
 function nav(active = "home") {
-  const isMember = user && !user.isAnonymous;
+  const adminLink = active === "admin"
+    ? '<a class="active" href="#admin">管理後台</a>'
+    : "";
   return `<header class="topbar">
-    <a class="brand" href="#"><span class="brandmark" aria-hidden="true">⚄</span><span>Gather Party<small>TRPG 團務管理</small></span></a>
-    <nav><a href="./quick.html">快速約團</a><a class="${active === "admin" ? "active" : ""}" href="#admin">${isMember ? "管理後台" : "管理登入"}</a></nav>
+    <a class="brand" href="#"><span class="brandmark" aria-hidden="true">⚄</span><span>Gather Party<small>${active === "admin" ? "團務管理" : "TRPG 快速約團"}</small></span></a>
+    <nav><a href="./quick.html">快速約團</a>${adminLink}</nav>
   </header>`;
 }
 
@@ -74,12 +76,10 @@ function spots(event) {
 }
 
 function renderHome() {
-  const isMember = Boolean(user && !user.isAnonymous);
   root.innerHTML = `<main class="shell">${nav("home")}
-    <section class="portal-head"><span class="eyebrow">GATHER PARTY</span><h1>選擇要使用的功能</h1><p>建立約團調查，或登入後台管理資料。</p></section>
-    <section class="portal-grid" aria-label="主要功能">
-      <a class="portal-card quick" href="./quick.html"><span class="portal-icon" aria-hidden="true">⚄</span><div><h2>快速約團</h2><p>建立連結，讓玩家從月曆填寫可跑日期與時段。</p><b>前往快速約團 →</b></div></a>
-      <a class="portal-card admin" href="#admin"><span class="portal-icon" aria-hidden="true">⌘</span><div><h2>管理後台</h2><p>管理團務資料、申請、時間調查與所有快速約團表。</p><b>${isMember ? "進入管理後台" : "登入管理後台"} →</b></div></a>
+    <section class="portal-head"><span class="eyebrow">GATHER PARTY</span><h1>快速約團</h1><p>建立約團表，讓玩家從月曆填寫可跑日期與時段。</p></section>
+    <section class="portal-grid single" aria-label="主要功能">
+      <a class="portal-card quick" href="./quick.html"><span class="portal-icon" aria-hidden="true">⚄</span><div><h2>建立或查看約團表</h2><p>建立新的快速約團，或回到這台裝置曾經建立的約團表。</p><b>前往快速約團 →</b></div></a>
     </section>
   </main>`;
 }
