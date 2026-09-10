@@ -12,6 +12,7 @@ const toastNode = document.querySelector("#toast");
 const DAY_NAMES = ["日", "一", "二", "三", "四", "五", "六"];
 const PERIOD_KEYS = ["早上", "下午", "晚上"];
 const SHORTENER_URL = "https://gather-party-link.gather-party.workers.dev";
+const SHORT_LINK_PREVIEW_VERSION = 2;
 
 let auth;
 let db;
@@ -196,7 +197,8 @@ async function createSchedule(event) {
     });
     if (playerShortUrl) await updateDoc(ref, {
       shortPlayerUrl: playerShortUrl,
-      shortPlayerTitle: form.elements.title.value.trim()
+      shortPlayerTitle: form.elements.title.value.trim(),
+      shortPlayerPreviewVersion: SHORT_LINK_PREVIEW_VERSION
     });
     location.hash = `manage=${ref.id}.${token}`;
   } catch (error) {
@@ -283,7 +285,9 @@ async function loadManagementAccess() {
 async function ensureShortLinks() {
   if (!canManageSchedule || !managementToken) return;
   try {
-    const playerLinkNeedsRefresh = !schedule.shortPlayerUrl || schedule.shortPlayerTitle !== schedule.title;
+    const playerLinkNeedsRefresh = !schedule.shortPlayerUrl
+      || schedule.shortPlayerTitle !== schedule.title
+      || schedule.shortPlayerPreviewVersion !== SHORT_LINK_PREVIEW_VERSION;
     const playerPromise = playerLinkNeedsRefresh
       ? createShortUrl(quickUrl(schedule.id), "player", schedule.title)
       : Promise.resolve(schedule.shortPlayerUrl);
@@ -294,7 +298,8 @@ async function ensureShortLinks() {
     if (playerLinkNeedsRefresh) {
       await updateDoc(doc(db, "quickSchedules", schedule.id), {
         shortPlayerUrl: playerShortUrl,
-        shortPlayerTitle: schedule.title
+        shortPlayerTitle: schedule.title,
+        shortPlayerPreviewVersion: SHORT_LINK_PREVIEW_VERSION
       });
       schedule.shortPlayerUrl = playerShortUrl;
       schedule.shortPlayerTitle = schedule.title;
@@ -380,10 +385,12 @@ function openEditScheduleDialog() {
         const refreshedPlayerUrl = await createShortUrl(quickUrl(schedule.id), "player", changes.title);
         await updateDoc(doc(db, "quickSchedules", schedule.id), {
           shortPlayerUrl: refreshedPlayerUrl,
-          shortPlayerTitle: changes.title
+          shortPlayerTitle: changes.title,
+          shortPlayerPreviewVersion: SHORT_LINK_PREVIEW_VERSION
         });
         schedule.shortPlayerUrl = refreshedPlayerUrl;
         schedule.shortPlayerTitle = changes.title;
+        schedule.shortPlayerPreviewVersion = SHORT_LINK_PREVIEW_VERSION;
       }
       dialog.close();
       renderSchedule(responses.find(item => item.id === user.uid) || null);
