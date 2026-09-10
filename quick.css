@@ -21,6 +21,7 @@
 .quick-day.selected { color:white; border-color:var(--primary); background:var(--primary); }
 .quick-day.outside { visibility:hidden; pointer-events:none; }
 .quick-day.holiday:not(.selected) { color:var(--red); background:#fff8f7; }
+.quick-day.today:not(.selected) { color:var(--primary); border:2px solid var(--primary); background:var(--primary-soft); }
 .quick-day small { position:absolute; right:4px; bottom:4px; max-width:calc(100% - 8px); overflow:hidden; font-size:.61rem; font-weight:750; text-overflow:ellipsis; white-space:nowrap; }
 .selected-dates { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
 .date-pill { padding:6px 9px; border-radius:999px; color:var(--primary); background:var(--primary-soft); font-size:.78rem; font-weight:800; }
