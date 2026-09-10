@@ -1,62 +1,51 @@
-# 約團時間表：GitHub Pages＋Firebase 版
+# Gather Party：GitHub 原生 TRPG 約團日曆
 
-這是一個免註冊的多人約團網頁。團主建立約團表並分享連結，玩家輸入暱稱、日期與單一可行時間後，資料會即時顯示在月曆中。
+網站會讀取 GitHub Issue、留言與 `adventures/` 裡的 Markdown，在 GitHub Pages 顯示目前招募、時間交集與正式場次。
 
-## 功能
+## 使用流程
 
-- 單次約團：填寫實際日期與一個時間，不必填結束時間。
-- 每週固定：填寫星期與固定時間。
-- 每人可加入多個可行時間。
-- 每筆時間都能個別刪除；全部刪除後按下「刪除所有時間」即可清除自己的資料。
-- 已儲存的本人時間可直接從月曆刪除。
-- 建立團務時可設定成團人數；共同時間達標後，網站會整理成可複製的文字清單。
-- 月曆以圓形 Token、暱稱及早／中／晚標籤顯示資料。
-- 相同日期與時間的玩家會排列在同一列。
-- 將滑鼠移到早／中／晚標籤上，可以查看實際時間。
-- 玩家不必申請帳號，網站會在背景使用 Firebase 匿名登入。
-- 每位玩家只能修改自己瀏覽器建立的資料。
-- 手機與電腦皆可使用。
+### 1. 發起揪團
 
-## 一、建立 Firebase 專案
+1. 到倉庫的 **Issues → New issue**，選擇「揪團與時間協調」。
+2. GM 填寫團務資訊，並將候選時段換成實際日期。
+3. 玩家複製 Issue 內的回覆表格到留言，以 `O`、`X`、`▲` 表示能否參加。
+4. 網站會讀取標記 `揪團`，或標題以 `[揪團]` 開頭的未關閉 Issue：
+   - 所有人都填 `O`：綠色「完美交集」。
+   - 所有人都填 `O` 或 `▲`，但至少一人為 `▲`：黃色「候選時段」。
+   - 缺少回覆或有人填 `X`：不列入交集。
 
-1. 開啟 [Firebase Console](https://console.firebase.google.com/)，選擇「建立專案」。
-2. 進入「Build／Authentication」，按「開始使用」。
-3. 在「Sign-in method」啟用「Anonymous／匿名」登入。
-4. 進入「Build／Firestore Database」，按「建立資料庫」。
-5. 資料庫位置可選離台灣較近的區域；建立時選「正式版模式」。
-6. 在 Firestore 的「Rules／規則」頁面，將本資料夾內 `firestore.rules` 的全部內容貼上並發布。
+> 請勿更改 Issue 表格的「日期／時段」結構。時段限用：`全天`、`早上`、`下午`、`晚上`、`時間由GM決定`。
 
-## 二、填入網站設定
+### 2. 建立正式場次
 
-1. 回到 Firebase 專案首頁，按「專案設定」。
-2. 在「你的應用程式」選擇 Web 圖示 `</>`，建立一個 Web 應用程式。
-3. Firebase 會顯示一段 `firebaseConfig`。
-4. 開啟本資料夾的 `firebase-config.js`，將六個 `PASTE_...` 欄位換成 Firebase 提供的值。
+複製 `adventures/example.md`，改成容易辨識且不含空白的檔名。網站會讀取 YAML Front Matter：
 
-Firebase 的前端設定會出現在公開網頁中，這是正常設計。請勿把服務帳戶私鑰、Admin SDK 金鑰或其他私人憑證放進檔案。真正的存取限制由 `firestore.rules` 負責。
+```yaml
+---
+title: "瘋狂山脈的呼喚"
+date: 2026-10-15
+time: "20:00 - 24:00"
+system: "CoC 7th"
+gm: "GM 名稱"
+status: "已成團"
+links:
+  character: "https://角色卡網址"
+  discord: "https://discord.gg/..."
+  ccfolia: "https://ccfolia.com/..."
+  fvtt: ""
+---
+```
 
-## 三、上傳 GitHub
+狀態色彩：
 
-1. 在 GitHub 建立新的 Repository，例如 `trpg-scheduler`。
-2. 將這個資料夾中的檔案全部上傳到 Repository 根目錄。
-3. 進入 Repository 的「Settings／Pages」。
-4. Source 選擇「Deploy from a branch」。
-5. Branch 選擇 `main`，資料夾選擇 `/ (root)`，按「Save」。
-6. 等待約一至數分鐘，GitHub 會提供網址：
-   `https://你的帳號.github.io/trpg-scheduler/`
+- `已成團`：綠色。
+- `待協調`：黃色。
+- `有人請假`：紅色。
 
-## 使用方式
+玩家要請假或提議改期時，可編輯該 Markdown 並發起 Pull Request。GM Merge 後，GitHub Pages 下一次載入就會反映變更。
 
-1. 開啟 GitHub Pages 網址。
-2. 輸入團務名稱、成團人數，並選擇「單次約團」或「每週固定」。
-3. 建立後按「複製分享連結」，傳給玩家。
-4. 玩家輸入暱稱、日期與時間。可直接輸入 `2000`，系統會自動轉為 `20:00`。
-5. 月曆會自動將相同時間的玩家排列在一起。
-6. 若要刪除時間，按該筆右上角的 `×` 後儲存；全部刪除時，按「刪除所有時間」。
+## 網站設定
 
-## 資料與權限提醒
+倉庫與資料夾設定集中在 `github-config.js`。GitHub Pages 請使用 `main` 分支的根目錄發布。
 
-- 任何取得約團連結的人都能看到該團的名稱、說明、玩家暱稱與時段。
-- 玩家資料與目前瀏覽器的匿名身分綁定；換裝置或清除網站資料後，無法修改舊資料，但可以重新填寫。
-- 團主建立的約團表不會列在公開首頁，必須知道完整分享連結才能進入。
-- 若要停用網站，可在 GitHub Pages 關閉發布；若要刪除資料，可在 Firebase Firestore Console 操作。
+這是無後端的公開網站，使用 GitHub 公開 API；未登入訪客通常每小時可讀取 60 次。網站只抓取最多 20 張開放中的揪團 Issue，單一 Issue 最多解析 100 則留言。若團務很多，建議關閉已結束的 Issue。
