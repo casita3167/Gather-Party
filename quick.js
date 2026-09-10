@@ -5,7 +5,7 @@ import {
   query, serverTimestamp, setDoc, where
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
-import { holidayFor } from "./taiwan-holidays.js";
+import { holidayFor } from "./taiwan-holidays.js?v=20260910-4";
 
 const root = document.querySelector("#app");
 const toastNode = document.querySelector("#toast");
@@ -24,6 +24,14 @@ let unsubscribeResponses = null;
 
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
+}
+
+function taiwanTodayKey() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function toast(message) {
@@ -52,14 +60,14 @@ function calendarMarkup() {
   const month = monthCursor.getMonth();
   const first = (new Date(year, month, 1).getDay() + 6) % 7;
   const total = new Date(year, month + 1, 0).getDate();
-  const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const today = taiwanTodayKey();
   const cells = [];
   for (let i = 0; i < first; i++) cells.push('<button class="quick-day outside" tabindex="-1"></button>');
   for (let day = 1; day <= total; day++) {
     const date = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     const holiday = holidayFor(date);
-    cells.push(`<button class="quick-day ${selectedDates.has(date) ? "selected" : ""} ${holiday ? "holiday" : ""} ${date === today ? "today" : ""}" type="button" data-date="${date}" title="${escapeHtml(holiday || date)}" aria-pressed="${selectedDates.has(date)}"><span>${day}</span>${holiday ? `<small>${escapeHtml(holiday)}</small>` : ""}</button>`);
+    const dayNote = holiday || (date === today ? "今天" : "");
+    cells.push(`<button class="quick-day ${selectedDates.has(date) ? "selected" : ""} ${holiday ? "holiday" : ""} ${date === today ? "today" : ""}" type="button" data-date="${date}" title="${escapeHtml(dayNote || date)}" aria-pressed="${selectedDates.has(date)}"><span>${day}</span>${dayNote ? `<small>${escapeHtml(dayNote)}</small>` : ""}</button>`);
   }
   return `<div class="quick-calendar"><div class="quick-weekday">一</div><div class="quick-weekday">二</div><div class="quick-weekday">三</div><div class="quick-weekday">四</div><div class="quick-weekday">五</div><div class="quick-weekday">六</div><div class="quick-weekday">日</div>${cells.join("")}</div>`;
 }
