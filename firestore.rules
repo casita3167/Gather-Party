@@ -213,9 +213,14 @@ service cloud.firestore {
           && token.size() >= 24
           && token.size() <= 64;
         allow update: if managesQuickSchedule(scheduleId)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shortUrl'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shortUrl', 'shortTitle', 'previewVersion'])
           && request.resource.data.shortUrl is string
-          && request.resource.data.shortUrl.size() <= 160;
+          && request.resource.data.shortUrl.size() <= 160
+          && (!request.resource.data.keys().hasAny(['shortTitle'])
+            || (request.resource.data.shortTitle is string
+              && request.resource.data.shortTitle.size() <= 80))
+          && (!request.resource.data.keys().hasAny(['previewVersion'])
+            || request.resource.data.previewVersion is int);
       }
 
       match /managers/{managerId} {
