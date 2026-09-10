@@ -80,7 +80,6 @@ service cloud.firestore {
         && request.resource.data.coordinator.size() >= 1
         && request.resource.data.coordinator.size() <= 40
         && request.resource.data.publicContact is string
-        && request.resource.data.publicContact.size() >= 1
         && request.resource.data.publicContact.size() <= 120
         && request.resource.data.capacity is int
         && request.resource.data.capacity >= 1
@@ -98,7 +97,6 @@ service cloud.firestore {
         && request.resource.data.coordinator.size() >= 1
         && request.resource.data.coordinator.size() <= 40
         && request.resource.data.publicContact is string
-        && request.resource.data.publicContact.size() >= 1
         && request.resource.data.publicContact.size() <= 120
         && request.resource.data.capacity is int
         && request.resource.data.capacity >= 1
@@ -161,7 +159,8 @@ service cloud.firestore {
 
     match /quickSchedules/{scheduleId} {
       allow get: if true;
-      allow list: if false;
+      allow list: if signedIn()
+        && resource.data.ownerUid == request.auth.uid;
       allow create: if signedIn()
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.title is string
@@ -173,7 +172,6 @@ service cloud.firestore {
         && request.resource.data.gmName is string
         && request.resource.data.gmName.size() <= 40
         && request.resource.data.contact is string
-        && request.resource.data.contact.size() >= 1
         && request.resource.data.contact.size() <= 120
         && request.resource.data.note is string
         && request.resource.data.note.size() <= 800
