@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import {
-  addDoc, collection, doc, getDoc, getDocs, getFirestore, onSnapshot,
+  addDoc, collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot,
   query, serverTimestamp, setDoc, where
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
@@ -106,11 +106,30 @@ async function loadMySchedules() {
       .map(item => ({ id: item.id, ...item.data() }))
       .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
     container.innerHTML = items.length
-      ? items.map(item => `<a class="my-schedule-row" href="#quick=${item.id}"><span><b>${escapeHtml(item.title)}</b><small>${item.dates?.length ? `${escapeHtml(dateLabel(item.dates[0], true))}${item.dates.length > 1 ? ` 起・${item.dates.length} 個候選日` : ""}` : "日期未定"}</small></span><span class="open-schedule">開啟 →</span></a>`).join("")
+      ? items.map(item => `<article class="my-schedule-row"><a href="#quick=${item.id}"><span><b>${escapeHtml(item.title)}</b><small>${item.dates?.length ? `${escapeHtml(dateLabel(item.dates[0], true))}${item.dates.length > 1 ? ` 起・${item.dates.length} 個候選日` : ""}` : "日期未定"}</small></span><span class="open-schedule">開啟 →</span></a><button class="delete-schedule" type="button" data-id="${item.id}" data-title="${escapeHtml(item.title)}" aria-label="刪除 ${escapeHtml(item.title)}">刪除</button></article>`).join("")
       : '<div class="empty small">還沒有建立過快速約團表。</div>';
+    container.querySelectorAll(".delete-schedule").forEach(button => {
+      button.onclick = () => deleteQuickSchedule(button.dataset.id, button.dataset.title, button);
+    });
   } catch (error) {
     console.error(error);
     container.innerHTML = '<div class="empty small">目前無法讀取清單，請確認新版 Firestore Rules 已發布。</div>';
+  }
+}
+
+async function deleteQuickSchedule(id, title, button) {
+  if (!window.confirm(`確定要刪除「${title}」嗎？玩家已填寫的時間也會一起刪除，且無法復原。`)) return;
+  button.disabled = true;
+  try {
+    const responseSnap = await getDocs(collection(db, "quickSchedules", id, "responses"));
+    await Promise.all(responseSnap.docs.map(item => deleteDoc(item.ref)));
+    await deleteDoc(doc(db, "quickSchedules", id));
+    toast("快速約團表已刪除");
+    loadMySchedules();
+  } catch (error) {
+    console.error(error);
+    toast("刪除失敗，請稍後再試。");
+    button.disabled = false;
   }
 }
 
