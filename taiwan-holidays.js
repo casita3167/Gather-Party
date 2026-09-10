@@ -1,0 +1,52 @@
+const fixedHolidays = {
+  "01-01": "元旦",
+  "02-28": "和平紀念日",
+  "04-04": "兒童節",
+  "05-01": "勞動節",
+  "09-28": "教師節",
+  "10-10": "國慶日",
+  "10-25": "臺灣光復紀念日",
+  "12-25": "行憲紀念日"
+};
+
+const announced2026 = {
+  "2026-01-01": "元旦",
+  "2026-02-14": "春節連假",
+  "2026-02-15": "春節連假",
+  "2026-02-16": "春節連假",
+  "2026-02-17": "春節",
+  "2026-02-18": "春節連假",
+  "2026-02-19": "春節連假",
+  "2026-02-20": "春節連假",
+  "2026-02-21": "春節連假",
+  "2026-02-22": "春節連假",
+  "2026-02-27": "和平紀念日補假",
+  "2026-02-28": "和平紀念日",
+  "2026-04-03": "兒童節補假",
+  "2026-04-04": "兒童節",
+  "2026-04-05": "清明節",
+  "2026-04-06": "清明節補假",
+  "2026-05-01": "勞動節",
+  "2026-06-19": "端午節",
+  "2026-09-25": "中秋節",
+  "2026-09-28": "教師節",
+  "2026-10-09": "國慶日補假",
+  "2026-10-10": "國慶日",
+  "2026-10-25": "臺灣光復紀念日",
+  "2026-10-26": "臺灣光復紀念日補假",
+  "2026-12-25": "行憲紀念日"
+};
+
+export function holidayFor(date) {
+  if (announced2026[date]) return announced2026[date];
+  return fixedHolidays[date.slice(5)] || "";
+}
+
+export function holidaysInMonth(year, month) {
+  const prefix = `${year}-${String(month).padStart(2, "0")}`;
+  const dates = new Set([
+    ...Object.keys(announced2026).filter(date => date.startsWith(prefix)),
+    ...Object.keys(fixedHolidays).map(day => `${year}-${day}`).filter(date => date.startsWith(prefix))
+  ]);
+  return [...dates].sort().map(date => ({ date, name: holidayFor(date) }));
+}

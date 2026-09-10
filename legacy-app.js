@@ -37,7 +37,7 @@ function setupScreen() {
 }
 
 function brandBar(withShare = false) {
-  return `<header class="brandbar"><a class="brand" href="#"><span class="brandmark" aria-hidden="true">⚄</span><span>約團時間表<small>不用註冊，貼連結就能一起填</small></span></a>${withShare ? '<button class="button secondary" id="copy-link" type="button">複製分享連結</button>' : ""}</header>`;
+  return `<header class="brandbar"><a class="brand" href="./#"><span class="brandmark" aria-hidden="true">⚄</span><span>約團時間表<small>點此回到 Gather Party 首頁</small></span></a>${withShare ? '<button class="button secondary" id="copy-link" type="button">複製分享連結</button>' : ""}</header>`;
 }
 
 function newSlot(kind) {
@@ -462,4 +462,3 @@ async function start() {
 
 window.addEventListener("hashchange", route);
 start();
-

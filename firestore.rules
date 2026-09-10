@@ -73,6 +73,15 @@ service cloud.firestore {
         && request.resource.data.title is string
         && request.resource.data.title.size() >= 1
         && request.resource.data.title.size() <= 80
+        && request.resource.data.gm is string
+        && request.resource.data.gm.size() >= 1
+        && request.resource.data.gm.size() <= 40
+        && request.resource.data.coordinator is string
+        && request.resource.data.coordinator.size() >= 1
+        && request.resource.data.coordinator.size() <= 40
+        && request.resource.data.publicContact is string
+        && request.resource.data.publicContact.size() >= 1
+        && request.resource.data.publicContact.size() <= 120
         && request.resource.data.capacity is int
         && request.resource.data.capacity >= 1
         && request.resource.data.capacity <= 30
@@ -82,6 +91,15 @@ service cloud.firestore {
       allow update: if (isAdmin()
           || (isStaff() && resource.data.ownerUid == request.auth.uid))
         && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.gm is string
+        && request.resource.data.gm.size() >= 1
+        && request.resource.data.gm.size() <= 40
+        && request.resource.data.coordinator is string
+        && request.resource.data.coordinator.size() >= 1
+        && request.resource.data.coordinator.size() <= 40
+        && request.resource.data.publicContact is string
+        && request.resource.data.publicContact.size() >= 1
+        && request.resource.data.publicContact.size() <= 120
         && request.resource.data.capacity is int
         && request.resource.data.capacity >= 1
         && request.resource.data.capacity <= 30
@@ -139,6 +157,50 @@ service cloud.firestore {
         && request.resource.data.submitted is bool;
       allow delete: if isAdmin()
         || (isStaff() && resource.data.ownerUid == request.auth.uid);
+    }
+
+    match /quickSchedules/{scheduleId} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 1
+        && request.resource.data.title.size() <= 80
+        && request.resource.data.coordinatorName is string
+        && request.resource.data.coordinatorName.size() >= 1
+        && request.resource.data.coordinatorName.size() <= 40
+        && request.resource.data.gmName is string
+        && request.resource.data.gmName.size() <= 40
+        && request.resource.data.contact is string
+        && request.resource.data.contact.size() >= 1
+        && request.resource.data.contact.size() <= 120
+        && request.resource.data.note is string
+        && request.resource.data.note.size() <= 800
+        && request.resource.data.dates is list
+        && request.resource.data.dates.size() >= 1
+        && request.resource.data.dates.size() <= 14
+        && request.resource.data.minPlayers is int
+        && request.resource.data.minPlayers >= 1
+        && request.resource.data.minPlayers <= 20;
+      allow update, delete: if signedIn()
+        && resource.data.ownerUid == request.auth.uid;
+
+      match /responses/{userId} {
+        allow read: if true;
+        allow create, update: if signedIn()
+          && request.auth.uid == userId
+          && request.resource.data.playerName is string
+          && request.resource.data.playerName.size() >= 1
+          && request.resource.data.playerName.size() <= 30
+          && request.resource.data.note is string
+          && request.resource.data.note.size() <= 500
+          && request.resource.data.choices is map
+          && request.resource.data.submitted == true;
+        allow delete: if signedIn()
+          && (request.auth.uid == userId
+            || get(/databases/$(database)/documents/quickSchedules/$(scheduleId)).data.ownerUid == request.auth.uid);
+      }
     }
   }
 }
