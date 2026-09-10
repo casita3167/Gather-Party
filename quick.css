@@ -21,6 +21,7 @@
 .delete-schedule:hover { color:white; background:var(--red); }
 .delete-schedule:disabled { opacity:.5; cursor:not-allowed; }
 .quick-layout { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(310px,.8fr); gap:16px; align-items:start; }
+.quick-create-form { max-width:760px; margin:0 auto; }
 .quick-card { padding:22px; border:1px solid var(--line); border-radius:22px; background:white; box-shadow:var(--shadow); }
 .quick-card h2 { margin:0 0 5px; }
 .quick-card>p { margin:0 0 18px; color:var(--muted); }
@@ -80,6 +81,12 @@
 .overview-table th:first-child,.overview-table td:first-child { position:sticky; left:0; z-index:1; text-align:left; background:white; }
 .overview-table tr:last-child td { border-bottom:0; }
 .overview-table th:last-child,.overview-table td:last-child { border-right:0; }
+.player-availability-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px; }
+.player-availability { padding:13px; border:1px solid var(--line); border-radius:13px; background:#fcfcfd; }
+.player-availability h3 { margin:0 0 8px; }
+.player-availability > div { display:grid; gap:6px; }
+.player-date-choice { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+.player-date-choice i { font-style:normal; }
 .choice-mark { display:inline-flex; min-width:30px; justify-content:center; padding:4px 6px; border-radius:7px; color:var(--primary); background:var(--primary-soft); font-weight:900; }
 .choice-mark.no { color:var(--red); background:var(--red-soft); }
 .response-note { margin-top:4px; color:var(--muted); font-size:.72rem; white-space:pre-wrap; }
