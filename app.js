@@ -8,6 +8,7 @@ import {
   onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
+import { holidayFor, holidaysInMonth } from "./taiwan-holidays.js";
 
 const root = document.querySelector("#app");
 const toastNode = document.querySelector("#toast");
@@ -29,6 +30,7 @@ let adminEvents = [];
 let monthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let unsubscribePublic = null;
 let unsubscribeAdmin = null;
+let adminEventsLoaded = false;
 
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
@@ -66,7 +68,7 @@ function nav(active = "home") {
   const isMember = user && !user.isAnonymous;
   return `<header class="topbar">
     <a class="brand" href="#"><span class="brandmark" aria-hidden="true">⚄</span><span>Gather Party<small>TRPG 團務管理</small></span></a>
-    <nav><a class="${active === "home" ? "active" : ""}" href="#">公開團務</a><a href="./legacy.html">快速約時間</a><a class="${active === "admin" ? "active" : ""}" href="#admin">${isMember ? "管理後台" : "GM 登入"}</a></nav>
+    <nav><a class="${active === "home" ? "active" : ""}" href="#">公開團務</a><a href="./quick.html">快速約團</a><a class="${active === "admin" ? "active" : ""}" href="#admin">${isMember ? "管理後台" : "管理登入"}</a></nav>
   </header>`;
 }
 
@@ -114,7 +116,8 @@ function calendarHtml() {
   for (let day = 1; day <= total; day++) {
     const date = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     const events = publicEvents.filter(item => item.date === date);
-    cells.push(`<div class="calendar-day"><span class="day-number">${day}</span><div class="day-events">${events.map(item => `<a class="calendar-event ${item.registrationClosed ? "closed" : ""}" href="#game=${item.id}"><small>${escapeHtml(item.time || "未定")}</small>${escapeHtml(item.title)}</a>`).join("")}</div></div>`);
+    const holiday = holidayFor(date);
+    cells.push(`<div class="calendar-day ${holiday ? "holiday" : ""}"><button class="day-create" type="button" data-date="${date}" title="在 ${date} 建立團務"><span class="day-number">${day}</span><span class="add-day">＋</span></button>${holiday ? `<small class="holiday-name">${escapeHtml(holiday)}</small>` : ""}<div class="day-events">${events.map(item => `<a class="calendar-event ${item.registrationClosed ? "closed" : ""}" href="#game=${item.id}"><small>${escapeHtml(item.time || "未定")}</small><span>${escapeHtml(item.title)}</span></a>`).join("")}</div></div>`);
   }
   while (cells.length % 7) cells.push('<div class="calendar-day outside"></div>');
   return `<div class="calendar-scroll"><div class="calendar"><div class="weekday">一</div><div class="weekday">二</div><div class="weekday">三</div><div class="weekday">四</div><div class="weekday">五</div><div class="weekday weekend">六</div><div class="weekday weekend">日</div>${cells.join("")}</div></div>`;
@@ -124,15 +127,20 @@ function renderHome() {
   const year = monthCursor.getFullYear();
   const month = monthCursor.getMonth() + 1;
   const upcoming = publicEvents.filter(item => !isPast(item)).sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
+  const holidays = holidaysInMonth(year, month);
   root.innerHTML = `<main class="shell">${nav("home")}
-    <section class="page-head"><div><span class="eyebrow">PUBLIC SCHEDULE</span><h1>跑團月曆</h1><p>查看近期團務、剩餘名額，或送出加團申請。</p></div><div class="view-actions"><button class="button secondary" id="prev-month" aria-label="上個月">‹</button><button class="button secondary" id="today-month">今天</button><button class="button secondary" id="next-month" aria-label="下個月">›</button></div></section>
-    <section class="calendar-panel"><h2>${year} 年 ${month} 月</h2>${calendarHtml()}</section>
+    <section class="page-head"><div><span class="eyebrow">PUBLIC SCHEDULE</span><h1>跑團月曆</h1><p>點選月曆日期即可建立團務；尚未登入時會先帶你前往管理登入。</p></div><div class="view-actions"><button class="button secondary" id="prev-month" aria-label="上個月">‹</button><button class="button secondary" id="today-month">今天</button><button class="button secondary" id="next-month" aria-label="下個月">›</button></div></section>
+    <section class="calendar-panel"><h2>${year} 年 ${month} 月</h2>${calendarHtml()}${holidays.length ? `<div class="holiday-reminders"><b>本月放假提醒</b>${holidays.map(item => `<span>${escapeHtml(item.date.slice(5).replace("-", "/"))}　${escapeHtml(item.name)}</span>`).join("")}</div>` : ""}</section>
     <section class="section"><div class="section-title"><h2>近期團務</h2><span>${upcoming.length} 場公開團務</span></div><div class="event-list">${upcoming.length ? upcoming.map(item => eventCard(item)).join("") : '<div class="empty">目前沒有公開團務。</div>'}</div></section>
     <footer>需要管理團務？<a href="#admin">前往 GM／管理員後台</a></footer>
   </main>`;
   document.querySelector("#prev-month").onclick = () => { monthCursor = new Date(year, month - 2, 1); renderHome(); };
   document.querySelector("#next-month").onclick = () => { monthCursor = new Date(year, month, 1); renderHome(); };
   document.querySelector("#today-month").onclick = () => { monthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1); renderHome(); };
+  document.querySelectorAll(".day-create[data-date]").forEach(button => button.onclick = () => {
+    sessionStorage.setItem("gather-party-create-date", button.dataset.date);
+    location.hash = "admin";
+  });
 }
 
 async function renderGame(id) {
@@ -148,7 +156,7 @@ async function renderGame(id) {
       <a class="back" href="#">← 回到跑團月曆</a>
       <article class="detail-card">
         <div class="detail-head"><div><div class="badges"><span class="badge system">${escapeHtml(event.system || "TRPG")}</span><span class="badge ${closed ? "closed" : "open"}">${closed ? "報名關閉" : "開放報名"}</span></div><h1>${escapeHtml(event.title)}</h1><p>${escapeHtml(event.scenario || "劇本未填")}</p></div><div class="capacity"><b>${count.remaining}</b><span>剩餘名額</span></div></div>
-        <dl class="detail-grid"><div><dt>日期</dt><dd>${escapeHtml(formatDate(event.date))}</dd></div><div><dt>時間</dt><dd>${escapeHtml(event.time || "時間未定")}</dd></div><div><dt>主持人</dt><dd>${escapeHtml(event.gm || "未填")}</dd></div><div><dt>人數</dt><dd>${count.approved}／${count.capacity} 人</dd></div><div><dt>地點</dt><dd>${escapeHtml(event.location || "地點未定")}</dd></div><div><dt>系統</dt><dd>${escapeHtml(event.system || "未填")}</dd></div></dl>
+        <dl class="detail-grid"><div><dt>日期</dt><dd>${escapeHtml(formatDate(event.date))}</dd></div><div><dt>時間</dt><dd>${escapeHtml(event.time || "時間未定")}</dd></div><div><dt>主持人</dt><dd>${escapeHtml(event.gm || "未填")}</dd></div><div><dt>人數</dt><dd>${count.approved}／${count.capacity} 人</dd></div><div><dt>地點</dt><dd>${escapeHtml(event.location || "地點未定")}</dd></div><div><dt>系統</dt><dd>${escapeHtml(event.system || "未填")}</dd></div><div><dt>建立者／統計者</dt><dd>${escapeHtml(event.coordinator || "未填")}</dd></div><div><dt>玩家聯絡方式</dt><dd>${escapeHtml(event.publicContact || "未提供")}</dd></div></dl>
         ${event.description ? `<section class="description"><h2>團務說明</h2><p>${escapeHtml(event.description)}</p></section>` : ""}
         ${link ? `<a class="button secondary external" href="${escapeHtml(link)}" target="_blank" rel="noreferrer">開啟相關連結 ↗</a>` : ""}
       </article>
@@ -189,7 +197,7 @@ async function getRole(account) {
 }
 
 function renderLogin(message = "") {
-  root.innerHTML = `<main class="shell narrow">${nav("admin")}<section class="login-card"><span class="brandmark">⚄</span><h1>GM／管理員登入</h1><p>登入後可以建立團務、審核申請與管理時間調查。</p><form id="login-form"><label>Email<input name="email" type="email" autocomplete="email" required></label><label>密碼<input name="password" type="password" autocomplete="current-password" required></label><p class="form-message">${escapeHtml(message)}</p><button class="button full" type="submit">登入管理後台</button></form><a href="#">← 回公開月曆</a></section></main>`;
+  root.innerHTML = `<main class="shell narrow">${nav("admin")}<section class="login-card"><span class="brandmark">⚄</span><h1>團務管理登入</h1><p>你可以只是建立者或統計者，不必是這場團的實際 GM。</p><form id="login-form"><label>Email<input name="email" type="email" autocomplete="email" required></label><label>密碼<input name="password" type="password" autocomplete="current-password" required></label><p class="form-message">${escapeHtml(message)}</p><button class="button full" type="submit">登入管理後台</button></form><a href="#">← 回公開月曆</a></section></main>`;
   document.querySelector("#login-form").addEventListener("submit", async e => {
     e.preventDefault();
     const button = e.currentTarget.querySelector("button");
@@ -211,12 +219,14 @@ function renderLogin(message = "") {
 
 async function subscribeAdminEvents() {
   unsubscribeAdmin?.();
+  adminEventsLoaded = false;
   const source = role.key === "admin"
     ? collection(db, "managedEvents")
     : query(collection(db, "managedEvents"), where("ownerUid", "==", user.uid));
   unsubscribeAdmin = onSnapshot(source, snap => {
     adminEvents = snap.docs.map(item => ({ id: item.id, ...item.data() })).sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
-    renderAdmin();
+    adminEventsLoaded = true;
+    if (route().page === "admin") renderAdmin();
   }, error => showError(error, "無法載入管理資料。"));
 }
 
@@ -231,6 +241,7 @@ function renderAdmin() {
   document.querySelector("#logout").onclick = async () => {
     unsubscribeAdmin?.();
     unsubscribeAdmin = null;
+    adminEventsLoaded = false;
     await signOut(auth);
   };
   document.querySelector("#new-event").onclick = () => openEventDialog();
@@ -239,6 +250,13 @@ function renderAdmin() {
     renderAdminView(button.dataset.view);
   });
   renderAdminView("managedEvents");
+  if (adminEventsLoaded) {
+    const pendingDate = sessionStorage.getItem("gather-party-create-date");
+    if (pendingDate) {
+      sessionStorage.removeItem("gather-party-create-date");
+      requestAnimationFrame(() => openEventDialog(null, pendingDate));
+    }
+  }
 }
 
 function renderAdminView(view) {
@@ -258,13 +276,13 @@ function renderAdminView(view) {
   }
 }
 
-function openEventDialog(event = null) {
+function openEventDialog(event = null, presetDate = "") {
   const dialog = document.querySelector("#event-dialog");
   const editing = Boolean(event);
   dialog.innerHTML = `<form method="dialog" class="dialog-card" id="event-form"><div class="dialog-head"><div><span class="eyebrow">EVENT</span><h2>${editing ? "編輯團務" : "建立團務"}</h2></div><button class="icon-button" value="cancel" aria-label="關閉">×</button></div>
-    <div class="form-grid"><label>團名<input name="title" maxlength="80" value="${escapeHtml(event?.title || "")}" required></label><label>主持人<input name="gm" maxlength="40" value="${escapeHtml(event?.gm || role.label)}" required></label><label>系統<input name="system" maxlength="40" value="${escapeHtml(event?.system || "")}" placeholder="例如：CoC 7th" required></label><label>劇本<input name="scenario" maxlength="100" value="${escapeHtml(event?.scenario || "")}" required></label><label>人數<input name="capacity" type="number" min="1" max="30" value="${Number(event?.capacity || 4)}" required></label><label>地點<input name="location" maxlength="100" value="${escapeHtml(event?.location || "")}" required></label></div>
+    <div class="form-grid"><label>團名<input name="title" maxlength="80" value="${escapeHtml(event?.title || "")}" required></label><label>實際 GM／主持人<input name="gm" maxlength="40" value="${escapeHtml(event?.gm || "")}" required></label><label>建立者／統計者<input name="coordinator" maxlength="40" value="${escapeHtml(event?.coordinator || role.label)}" required></label><label>給玩家的聯絡方式<input name="publicContact" maxlength="120" value="${escapeHtml(event?.publicContact || "")}" placeholder="Discord、LINE 或其他聯絡方式" required></label><label>系統<input name="system" maxlength="40" value="${escapeHtml(event?.system || "")}" placeholder="例如：CoC 7th" required></label><label>劇本<input name="scenario" maxlength="100" value="${escapeHtml(event?.scenario || "")}" required></label><label>人數<input name="capacity" type="number" min="1" max="30" value="${Number(event?.capacity || 4)}" required></label><label>地點<input name="location" maxlength="100" value="${escapeHtml(event?.location || "")}" required></label></div>
     <label class="checkline"><input id="date-tbd" name="dateTbd" type="checkbox" ${event && !event.date ? "checked" : ""}>日期未定，之後使用時間調查</label>
-    <div class="form-grid"><label>日期<input id="event-date" name="date" type="date" value="${escapeHtml(event?.date || "")}" ${event && !event.date ? "disabled" : ""}></label><label>時間<input name="time" maxlength="40" value="${escapeHtml(event?.time || "")}" placeholder="例如：20:00～24:00"></label></div>
+    <div class="form-grid"><label>日期<input id="event-date" name="date" type="date" value="${escapeHtml(event?.date || presetDate)}" ${event && !event.date ? "disabled" : ""}></label><label>時間<input name="time" maxlength="40" value="${escapeHtml(event?.time || "")}" placeholder="例如：20:00～24:00"></label></div>
     <label>相關連結<input name="externalLink" type="url" value="${escapeHtml(event?.externalLink || "")}" placeholder="Discord、FVTT、ccfolia 或角色卡連結"></label>
     <label>說明<textarea name="description" maxlength="1500">${escapeHtml(event?.description || "")}</textarea></label>
     <div class="switches"><label><input name="hidden" type="checkbox" ${event?.hidden ? "checked" : ""}><span><b>本團隱藏</b><small>不顯示於公開月曆與列表</small></span></label><label><input name="registrationClosed" type="checkbox" ${event?.registrationClosed ? "checked" : ""}><span><b>關閉報名</b><small>仍可公開顯示，但不接受新申請</small></span></label></div>
@@ -282,7 +300,9 @@ function openEventDialog(event = null) {
     const button = document.querySelector("#save-event");
     button.disabled = true;
     const data = {
-      title: form.elements.title.value.trim(), gm: form.gm.value.trim(), system: form.system.value.trim(),
+      title: form.elements.title.value.trim(), gm: form.gm.value.trim(),
+      coordinator: form.coordinator.value.trim(), publicContact: form.publicContact.value.trim(),
+      system: form.system.value.trim(),
       scenario: form.scenario.value.trim(), capacity: Number(form.capacity.value), location: form.location.value.trim(),
       date: form.dateTbd.checked ? "" : form.date.value, time: form.time.value.trim(),
       externalLink: form.externalLink.value.trim(), description: form.description.value.trim(),
