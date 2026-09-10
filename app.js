@@ -74,6 +74,7 @@ function spots(event) {
 }
 
 function renderHome() {
+  const isMember = Boolean(user && !user.isAnonymous);
   root.innerHTML = `<main class="shell">${nav("home")}
     <section class="portal-head"><span class="eyebrow">GATHER PARTY</span><h1>選擇要使用的功能</h1><p>建立約團調查，或登入後台管理資料。</p></section>
     <section class="portal-grid" aria-label="主要功能">
