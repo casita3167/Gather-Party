@@ -14,9 +14,9 @@ const root = document.querySelector("#app");
 const toastNode = document.querySelector("#toast");
 const PERIODS = [
   ["全天", "整天皆可"],
-  ["早上", "09:00～12:00"],
-  ["下午", "13:00～18:00"],
-  ["晚上", "20:30～24:00"],
+  ["早上", "08:00～12:00"],
+  ["下午", "14:00～18:00"],
+  ["晚上", "20:00～24:00"],
   ["時間由GM決定", "由 GM 決定實際時間"]
 ];
 const JOIN_STATUS = { pending: "待處理", approved: "核准", rejected: "婉拒" };
@@ -244,7 +244,7 @@ function renderAdmin() {
   if (!role) return renderLogin("此帳號沒有管理權限。");
   root.innerHTML = `<main class="shell">${nav("admin")}
     <section class="admin-head"><div><span class="eyebrow">MANAGEMENT</span><h1>團務管理</h1><p>${escapeHtml(role.label)}・${escapeHtml(user.email || "")}</p></div><div><button class="button secondary" id="logout">登出</button><button class="button" id="new-event">＋ 開團</button></div></section>
-    <div class="admin-grid"><aside class="admin-nav"><button class="active" data-view="managedEvents">團務列表</button><button data-view="requests">加團申請</button><button data-view="polls">時間調查</button></aside><section id="admin-content" class="admin-content"></section></div>
+    <div class="admin-grid"><aside class="admin-nav"><button class="active" data-view="managedEvents">團務列表</button><button data-view="requests">加團申請</button><button data-view="polls">時間調查</button>${role.key === "admin" ? '<button data-view="quickSchedules">快速約團</button>' : ""}</aside><section id="admin-content" class="admin-content"></section></div>
     <dialog id="event-dialog"></dialog><dialog id="poll-dialog"></dialog>
   </main>`;
   document.querySelector("#logout").onclick = async () => {
@@ -280,8 +280,52 @@ function renderAdminView(view) {
   } else if (view === "requests") {
     panel.innerHTML = `<div class="panel-title"><div><h2>加團申請</h2><p>請先選擇要查看的團務。</p></div><select id="request-event"><option value="">選擇團務</option>${adminEvents.map(event => `<option value="${event.id}">${escapeHtml(event.title)}</option>`).join("")}</select></div><div id="request-list" class="empty">選擇團務後會顯示申請資料。</div>`;
     document.querySelector("#request-event").onchange = e => e.target.value && renderRequests(e.target.value);
+  } else if (view === "quickSchedules" && role.key === "admin") {
+    renderQuickScheduleAdmin();
   } else {
     renderPollManager();
+  }
+}
+
+async function renderQuickScheduleAdmin() {
+  const panel = document.querySelector("#admin-content");
+  panel.innerHTML = '<div class="loading-inline"><div class="spinner"></div>正在讀取快速約團⋯</div>';
+  try {
+    const snap = await getDocs(collection(db, "quickSchedules"));
+    const schedules = await Promise.all(snap.docs.map(async item => {
+      const responseSnap = await getDocs(collection(db, "quickSchedules", item.id, "responses"));
+      return { id: item.id, ...item.data(), responseCount: responseSnap.size };
+    }));
+    schedules.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+    panel.innerHTML = `<div class="panel-title"><div><h2>所有快速約團</h2><p>管理員可以查看與刪除任何人建立的快速約團表。</p></div><span class="count-pill">${schedules.length} 張</span></div><div class="manage-list">${schedules.length ? schedules.map(item => `<article class="manage-row"><div><div class="badges"><span class="badge system">${item.responseCount} 人填寫</span><span class="badge open">門檻 ${Number(item.minPlayers || 1)} 人</span></div><h3>${escapeHtml(item.title)}</h3><p>建立者：${escapeHtml(item.coordinatorName || "未填")}・GM：${escapeHtml(item.gmName || "未定")}・${item.dates?.length || 0} 個候選日</p></div><div class="row-actions"><a class="button secondary" href="./quick.html#quick=${item.id}" target="_blank" rel="noreferrer">查看填表</a><button class="button reject delete-quick-admin" data-id="${item.id}">刪除</button></div></article>`).join("") : '<div class="empty">目前沒有快速約團表。</div>'}</div>`;
+    panel.querySelectorAll(".delete-quick-admin").forEach(button => {
+      button.onclick = () => deleteQuickScheduleAdmin(schedules.find(item => item.id === button.dataset.id));
+    });
+  } catch (error) {
+    showError(error, "無法讀取快速約團表。");
+    panel.innerHTML = '<div class="empty">無法讀取快速約團表，請確認新版 Firestore Rules 已發布。</div>';
+  }
+}
+
+async function deleteQuickScheduleAdmin(schedule) {
+  if (!schedule || !confirm(`確定刪除「${schedule.title}」？玩家填寫資料與私人管理權限也會一併刪除。`)) return;
+  try {
+    const [responses, tokens, managers] = await Promise.all([
+      getDocs(collection(db, "quickSchedules", schedule.id, "responses")),
+      getDocs(collection(db, "quickSchedules", schedule.id, "managementTokens")),
+      getDocs(collection(db, "quickSchedules", schedule.id, "managers"))
+    ]);
+    if (responses.size + tokens.size + managers.size > 450) return toast("關聯資料過多，請分批清理後再刪除。");
+    const batch = writeBatch(db);
+    responses.docs.forEach(item => batch.delete(item.ref));
+    tokens.docs.forEach(item => batch.delete(item.ref));
+    managers.docs.forEach(item => batch.delete(item.ref));
+    batch.delete(doc(db, "quickSchedules", schedule.id));
+    await batch.commit();
+    toast("快速約團表已刪除");
+    renderQuickScheduleAdmin();
+  } catch (error) {
+    showError(error, "快速約團表刪除失敗。");
   }
 }
 
