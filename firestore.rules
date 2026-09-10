@@ -183,8 +183,8 @@ service cloud.firestore {
         && request.resource.data.note is string
         && request.resource.data.note.size() <= 800
         && request.resource.data.dates is list
-        && request.resource.data.dates.size() >= 1
-        && request.resource.data.dates.size() <= 14
+        && request.resource.data.dates.size() >= 0
+        && request.resource.data.dates.size() <= 31
         && request.resource.data.minPlayers is int
         && request.resource.data.minPlayers >= 1
         && request.resource.data.minPlayers <= 20;
