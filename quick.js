@@ -5,7 +5,7 @@ import {
   query, serverTimestamp, setDoc, updateDoc, where
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
-import { holidayFor } from "./taiwan-holidays.js?v=20260910-4";
+import { holidayFor } from "./taiwan-holidays.js?v=20260910-5";
 
 const root = document.querySelector("#app");
 const toastNode = document.querySelector("#toast");
