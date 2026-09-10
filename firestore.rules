@@ -23,6 +23,13 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/managedEvents/$(eventId)).data.ownerUid == request.auth.uid);
     }
 
+    function managesQuickSchedule(scheduleId) {
+      return isAdmin()
+        || (signedIn()
+          && (get(/databases/$(database)/documents/quickSchedules/$(scheduleId)).data.ownerUid == request.auth.uid
+            || exists(/databases/$(database)/documents/quickSchedules/$(scheduleId)/managers/$(request.auth.uid))));
+    }
+
     match /admins/{userId} {
       allow get: if signedIn() && request.auth.uid == userId;
       allow list, write: if isAdmin();
@@ -159,8 +166,8 @@ service cloud.firestore {
 
     match /quickSchedules/{scheduleId} {
       allow get: if true;
-      allow list: if signedIn()
-        && resource.data.ownerUid == request.auth.uid;
+      allow list: if isAdmin()
+        || (signedIn() && resource.data.ownerUid == request.auth.uid);
       allow create: if signedIn()
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.title is string
@@ -181,8 +188,7 @@ service cloud.firestore {
         && request.resource.data.minPlayers is int
         && request.resource.data.minPlayers >= 1
         && request.resource.data.minPlayers <= 20;
-      allow update, delete: if signedIn()
-        && resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if managesQuickSchedule(scheduleId);
 
       match /responses/{userId} {
         allow read: if true;
@@ -196,8 +202,30 @@ service cloud.firestore {
           && request.resource.data.choices is map
           && request.resource.data.submitted == true;
         allow delete: if signedIn()
-          && (request.auth.uid == userId
-            || get(/databases/$(database)/documents/quickSchedules/$(scheduleId)).data.ownerUid == request.auth.uid);
+          && (request.auth.uid == userId || managesQuickSchedule(scheduleId));
+      }
+
+      // 高熵隨機 token 只存在私人管理連結中；集合不可由一般使用者列出。
+      match /managementTokens/{token} {
+        allow get, list, delete: if managesQuickSchedule(scheduleId);
+        allow create: if signedIn()
+          && get(/databases/$(database)/documents/quickSchedules/$(scheduleId)).data.ownerUid == request.auth.uid
+          && token.size() >= 24
+          && token.size() <= 64;
+      }
+
+      match /managers/{managerId} {
+        allow get: if signedIn()
+          && (request.auth.uid == managerId || managesQuickSchedule(scheduleId));
+        allow list: if managesQuickSchedule(scheduleId);
+        allow create: if signedIn()
+          && request.auth.uid == managerId
+          && request.resource.data.token is string
+          && request.resource.data.token.size() >= 24
+          && request.resource.data.token.size() <= 64
+          && exists(/databases/$(database)/documents/quickSchedules/$(scheduleId)/managementTokens/$(request.resource.data.token));
+        allow delete: if signedIn()
+          && (request.auth.uid == managerId || managesQuickSchedule(scheduleId));
       }
     }
   }
