@@ -68,11 +68,16 @@ function manageUrl(id, token) {
   return `${new URL("./quick.html", location.href).href.split("#")[0]}#manage=${id}.${token}`;
 }
 
-async function createShortUrl(target, type) {
+async function createShortUrl(target, type, title = "") {
   const response = await fetch(`${SHORTENER_URL}/api/shorten`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ target, type })
+    body: JSON.stringify({
+      target,
+      type,
+      title: title.trim().slice(0, 80),
+      description: type === "player" ? "打開月曆，填寫你可以跑團的日期與時段。" : ""
+    })
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok || !result.shortUrl) throw new Error(result.error || "短網址建立失敗");
@@ -179,8 +184,8 @@ async function createSchedule(event) {
     let managerShortUrl = "";
     try {
       [playerShortUrl, managerShortUrl] = await Promise.all([
-        createShortUrl(quickUrl(ref.id), "player"),
-        createShortUrl(manageUrl(ref.id, token), "manager")
+        createShortUrl(quickUrl(ref.id), "player", form.elements.title.value.trim()),
+        createShortUrl(manageUrl(ref.id, token), "manager", form.elements.title.value.trim())
       ]);
     } catch (shortenerError) {
       console.error(shortenerError);
@@ -189,7 +194,10 @@ async function createSchedule(event) {
       createdAt: serverTimestamp(),
       ...(managerShortUrl ? { shortUrl: managerShortUrl } : {})
     });
-    if (playerShortUrl) await updateDoc(ref, { shortPlayerUrl: playerShortUrl });
+    if (playerShortUrl) await updateDoc(ref, {
+      shortPlayerUrl: playerShortUrl,
+      shortPlayerTitle: form.elements.title.value.trim()
+    });
     location.hash = `manage=${ref.id}.${token}`;
   } catch (error) {
     console.error(error);
@@ -275,16 +283,21 @@ async function loadManagementAccess() {
 async function ensureShortLinks() {
   if (!canManageSchedule || !managementToken) return;
   try {
-    const playerPromise = schedule.shortPlayerUrl
-      ? Promise.resolve(schedule.shortPlayerUrl)
-      : createShortUrl(quickUrl(schedule.id), "player");
+    const playerLinkNeedsRefresh = !schedule.shortPlayerUrl || schedule.shortPlayerTitle !== schedule.title;
+    const playerPromise = playerLinkNeedsRefresh
+      ? createShortUrl(quickUrl(schedule.id), "player", schedule.title)
+      : Promise.resolve(schedule.shortPlayerUrl);
     const managerPromise = managementShortUrl
       ? Promise.resolve(managementShortUrl)
-      : createShortUrl(manageUrl(schedule.id, managementToken), "manager");
+      : createShortUrl(manageUrl(schedule.id, managementToken), "manager", schedule.title);
     const [playerShortUrl, managerShortUrl] = await Promise.all([playerPromise, managerPromise]);
-    if (!schedule.shortPlayerUrl) {
-      await updateDoc(doc(db, "quickSchedules", schedule.id), { shortPlayerUrl: playerShortUrl });
+    if (playerLinkNeedsRefresh) {
+      await updateDoc(doc(db, "quickSchedules", schedule.id), {
+        shortPlayerUrl: playerShortUrl,
+        shortPlayerTitle: schedule.title
+      });
       schedule.shortPlayerUrl = playerShortUrl;
+      schedule.shortPlayerTitle = schedule.title;
     }
     if (!managementShortUrl) {
       await setDoc(doc(db, "quickSchedules", schedule.id, "managementTokens", managementToken), {
@@ -363,6 +376,15 @@ function openEditScheduleDialog() {
     try {
       await updateDoc(doc(db, "quickSchedules", schedule.id), changes);
       schedule = { ...schedule, ...changes };
+      if (schedule.shortPlayerTitle !== changes.title) {
+        const refreshedPlayerUrl = await createShortUrl(quickUrl(schedule.id), "player", changes.title);
+        await updateDoc(doc(db, "quickSchedules", schedule.id), {
+          shortPlayerUrl: refreshedPlayerUrl,
+          shortPlayerTitle: changes.title
+        });
+        schedule.shortPlayerUrl = refreshedPlayerUrl;
+        schedule.shortPlayerTitle = changes.title;
+      }
       dialog.close();
       renderSchedule(responses.find(item => item.id === user.uid) || null);
       toast("約團設定已更新");
