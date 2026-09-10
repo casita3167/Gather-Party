@@ -215,14 +215,14 @@ async function createSchedule(event) {
   }
 }
 
-async function openSchedule(id) {
+async function openSchedule(id, routeManagementToken = "") {
   unsubscribeResponses?.();
   root.innerHTML = '<main class="loading-screen"><div class="spinner"></div><p>正在讀取快速約團表⋯</p></main>';
   try {
     const snap = await getDoc(doc(db, "quickSchedules", id));
     if (!snap.exists()) throw new Error("找不到這張快速約團表。");
     schedule = { id: snap.id, ...snap.data() };
-    await loadManagementAccess();
+    await loadManagementAccess(routeManagementToken);
     await ensureShortLinks();
     const mine = await getDoc(doc(db, "quickSchedules", id, "responses", user.uid));
     const mineData = mine.exists() ? mine.data() : null;
@@ -256,47 +256,29 @@ async function openSchedule(id) {
 async function claimManagementAccess(id, token) {
   const managerRef = doc(db, "quickSchedules", id, "managers", user.uid);
   const existing = await getDoc(managerRef);
-  if (!existing.exists()) {
-    await setDoc(managerRef, { token, claimedAt: serverTimestamp() });
-  }
-  managementToken = existing.exists() ? (existing.data().token || token) : token;
-  canManageSchedule = true;
+  if (existing.exists()) await deleteDoc(managerRef);
+  await setDoc(managerRef, { token, claimedAt: serverTimestamp() });
 }
 
-async function loadManagementAccess() {
-  canManageSchedule = schedule.ownerUid === user.uid;
+async function loadManagementAccess(routeManagementToken = "") {
+  canManageSchedule = false;
   managementToken = "";
   managementShortUrl = "";
   managementShortTitle = "";
   managementPreviewVersion = 0;
-  try {
-    if (!canManageSchedule) {
-      const claim = await getDoc(doc(db, "quickSchedules", schedule.id, "managers", user.uid));
-      canManageSchedule = claim.exists();
-      if (claim.exists()) managementToken = claim.data().token || "";
-    }
-    if (canManageSchedule) {
-      let tokenData = {};
-      if (managementToken) {
-        const tokenSnap = await getDoc(doc(db, "quickSchedules", schedule.id, "managementTokens", managementToken));
-        if (tokenSnap.exists()) tokenData = tokenSnap.data();
-      } else {
-        const tokens = await getDocs(collection(db, "quickSchedules", schedule.id, "managementTokens"));
-        managementToken = tokens.docs[0]?.id || "";
-        tokenData = tokens.docs[0]?.data() || {};
-      }
-      managementShortUrl = tokenData.shortUrl || "";
-      managementShortTitle = tokenData.shortTitle || "";
-      managementPreviewVersion = Number(tokenData.previewVersion || 0);
-      if (!managementToken && schedule.ownerUid === user.uid) {
-        managementToken = randomManagementToken();
-        await setDoc(doc(db, "quickSchedules", schedule.id, "managementTokens", managementToken), { createdAt: serverTimestamp() });
-      }
-    }
-  } catch (error) {
-    console.error(error);
-    if (schedule.ownerUid === user.uid) canManageSchedule = true;
-  }
+  if (!routeManagementToken) return;
+
+  const tokenSnap = await getDoc(doc(
+    db, "quickSchedules", schedule.id, "managementTokens", routeManagementToken
+  ));
+  if (!tokenSnap.exists()) throw new Error("管理連結無效");
+
+  const tokenData = tokenSnap.data();
+  managementToken = routeManagementToken;
+  managementShortUrl = tokenData.shortUrl || "";
+  managementShortTitle = tokenData.shortTitle || "";
+  managementPreviewVersion = Number(tokenData.previewVersion || 0);
+  canManageSchedule = true;
 }
 
 async function ensureShortLinks() {
@@ -654,6 +636,11 @@ function bindOverviewActions() {
 async function handleRoute() {
   const route = routeInfo();
   if (route.id) {
+    canManageSchedule = false;
+    managementToken = "";
+    managementShortUrl = "";
+    managementShortTitle = "";
+    managementPreviewVersion = 0;
     if (route.token) {
       try {
         await claimManagementAccess(route.id, route.token);
@@ -663,7 +650,7 @@ async function handleRoute() {
         return;
       }
     }
-    await openSchedule(route.id);
+    await openSchedule(route.id, route.token || "");
   }
   else {
     schedule = null;
