@@ -83,6 +83,10 @@
 .response-note { margin-top:4px; color:var(--muted); font-size:.72rem; white-space:pre-wrap; }
 .share-box { display:flex; gap:7px; margin-top:15px; }
 .share-box input { min-width:0; color:var(--muted); font-size:.84rem; }
+.management-box { margin-top:18px; padding:14px; border:1px solid #f1c8c4; border-radius:13px; background:#fff8f7; }
+.management-box h3 { margin:0 0 5px; color:#7a271a; }
+.management-box p { margin:0; color:var(--muted); font-size:.82rem; line-height:1.5; }
+.management-box .share-box { margin:10px 0; }
 @media (max-width:850px) {
   .quick-layout,.schedule-grid { grid-template-columns:1fr; }
   .quick-card.sticky { position:static; }

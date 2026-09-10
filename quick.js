@@ -21,6 +21,8 @@ let schedule = null;
 let responses = [];
 let choices = new Map();
 let unsubscribeResponses = null;
+let canManageSchedule = false;
+let managementToken = "";
 
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
@@ -45,8 +47,24 @@ function brand() {
   return `<header class="quick-brand"><a class="quick-home" href="./#"><span class="brandmark">⚄</span><span>Gather Party<small>快速約團</small></span></a><a href="./#">← 回到團務首頁</a></header>`;
 }
 
-function routeId() {
-  return location.hash.match(/^#quick=([A-Za-z0-9]+)$/)?.[1] || "";
+function routeInfo() {
+  const manage = location.hash.match(/^#manage=([A-Za-z0-9]+)\.([A-Za-z0-9_-]{24,})$/);
+  if (manage) return { id: manage[1], token: manage[2] };
+  const quick = location.hash.match(/^#quick=([A-Za-z0-9]+)$/);
+  return quick ? { id: quick[1], token: "" } : { id: "", token: "" };
+}
+
+function randomManagementToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function quickUrl(id) {
+  return `${new URL("./quick.html", location.href).href.split("#")[0]}#quick=${id}`;
+}
+
+function manageUrl(id, token) {
+  return `${new URL("./quick.html", location.href).href.split("#")[0]}#manage=${id}.${token}`;
 }
 
 function dateLabel(date, short = false) {
@@ -121,11 +139,20 @@ async function deleteQuickSchedule(id, title, button) {
   if (!window.confirm(`確定要刪除「${title}」嗎？玩家已填寫的時間也會一起刪除，且無法復原。`)) return;
   button.disabled = true;
   try {
-    const responseSnap = await getDocs(collection(db, "quickSchedules", id, "responses"));
+    const [responseSnap, tokenSnap, managerSnap] = await Promise.all([
+      getDocs(collection(db, "quickSchedules", id, "responses")),
+      getDocs(collection(db, "quickSchedules", id, "managementTokens")),
+      getDocs(collection(db, "quickSchedules", id, "managers"))
+    ]);
     await Promise.all(responseSnap.docs.map(item => deleteDoc(item.ref)));
+    await Promise.all(tokenSnap.docs.map(item => deleteDoc(item.ref)));
+    await Promise.all(managerSnap.docs.filter(item => item.id !== user.uid).map(item => deleteDoc(item.ref)));
     await deleteDoc(doc(db, "quickSchedules", id));
+    const ownManager = managerSnap.docs.find(item => item.id === user.uid);
+    if (ownManager) await deleteDoc(ownManager.ref);
     toast("快速約團表已刪除");
-    loadMySchedules();
+    if (schedule?.id === id) location.hash = "";
+    else loadMySchedules();
   } catch (error) {
     console.error(error);
     toast("刪除失敗，請稍後再試。");
@@ -161,8 +188,10 @@ async function createSchedule(event) {
   if (!selectedDates.size) return toast("請先在月曆選擇至少一個候選日期。");
   const button = form.querySelector('button[type="submit"]');
   button.disabled = true;
+  let ref = null;
   try {
-    const ref = await addDoc(collection(db, "quickSchedules"), {
+    const token = randomManagementToken();
+    ref = await addDoc(collection(db, "quickSchedules"), {
       ownerUid: user.uid,
       title: form.elements.title.value.trim(),
       coordinatorName: form.coordinatorName.value.trim(),
@@ -178,9 +207,11 @@ async function createSchedule(event) {
       },
       createdAt: serverTimestamp()
     });
-    location.hash = `quick=${ref.id}`;
+    await setDoc(doc(db, "quickSchedules", ref.id, "managementTokens", token), { createdAt: serverTimestamp() });
+    location.hash = `manage=${ref.id}.${token}`;
   } catch (error) {
     console.error(error);
+    if (ref) await deleteDoc(ref).catch(() => {});
     toast("建立失敗，請確認 Firestore 規則已更新。");
     button.disabled = false;
   }
@@ -193,6 +224,7 @@ async function openSchedule(id) {
     const snap = await getDoc(doc(db, "quickSchedules", id));
     if (!snap.exists()) throw new Error("找不到這張快速約團表。");
     schedule = { id: snap.id, ...snap.data() };
+    await loadManagementAccess();
     const mine = await getDoc(doc(db, "quickSchedules", id, "responses", user.uid));
     const mineData = mine.exists() ? mine.data() : null;
     choices = new Map(schedule.dates.map(date => [date, new Set(mineData?.choices?.[date] || [])]));
@@ -216,15 +248,49 @@ async function openSchedule(id) {
   }
 }
 
+async function claimManagementAccess(id, token) {
+  await setDoc(doc(db, "quickSchedules", id, "managers", user.uid), {
+    token,
+    claimedAt: serverTimestamp()
+  });
+  managementToken = token;
+  canManageSchedule = true;
+}
+
+async function loadManagementAccess() {
+  canManageSchedule = schedule.ownerUid === user.uid;
+  managementToken = "";
+  try {
+    if (!canManageSchedule) {
+      const claim = await getDoc(doc(db, "quickSchedules", schedule.id, "managers", user.uid));
+      canManageSchedule = claim.exists();
+      if (claim.exists()) managementToken = claim.data().token || "";
+    }
+    if (canManageSchedule && !managementToken) {
+      const tokens = await getDocs(collection(db, "quickSchedules", schedule.id, "managementTokens"));
+      managementToken = tokens.docs[0]?.id || "";
+      if (!managementToken && schedule.ownerUid === user.uid) {
+        managementToken = randomManagementToken();
+        await setDoc(doc(db, "quickSchedules", schedule.id, "managementTokens", managementToken), { createdAt: serverTimestamp() });
+      }
+    }
+  } catch (error) {
+    console.error(error);
+    if (schedule.ownerUid === user.uid) canManageSchedule = true;
+  }
+}
+
 function renderSchedule(mineData) {
   const periodRanges = schedule.periods || {};
   const submitted = responses.filter(item => item.submitted);
   const best = bestSlots(submitted);
+  const playerLink = quickUrl(schedule.id);
+  const privateLink = managementToken ? manageUrl(schedule.id, managementToken) : "";
   root.innerHTML = `<main class="quick-shell">${brand()}
     <section class="schedule-banner"><div><span class="eyebrow">QUICK SCHEDULER</span><h1>${escapeHtml(schedule.title)}</h1><p>建立者／統計者：${escapeHtml(schedule.coordinatorName)}${schedule.gmName ? `・實際 GM：${escapeHtml(schedule.gmName)}` : ""}</p></div>${schedule.contact ? `<div class="contact-card"><span>給玩家的聯絡方式</span><b>${escapeHtml(schedule.contact)}</b></div>` : ""}</section>
     ${schedule.note ? `<p class="quick-note">${escapeHtml(schedule.note)}</p>` : ""}
     <div class="schedule-grid"><form id="response-form" class="quick-card"><h2>填寫我的時間</h2><p>同一天可複選早、中、晚；整天都不行請選 X。儲存後仍可隨時回來修改。</p>${periodLegendMarkup(periodRanges)}<label>玩家名稱<input name="playerName" maxlength="30" value="${escapeHtml(mineData?.playerName || localStorage.getItem("gather-party-player") || "")}" required></label><div class="choice-list">${schedule.dates.map(date => choiceRow(date, periodRanges)).join("")}</div><label>備註<textarea name="note" maxlength="500" placeholder="例如：晚上九點後才有空、這天可能需要再確認">${escapeHtml(mineData?.note || "")}</textarea></label><div class="quick-form-actions"><span class="muted">每個日期都要選擇至少一個選項</span><button class="button" type="submit">${mineData?.submitted ? "儲存變更" : "儲存我的時間"}</button></div></form>
-      <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${submitted.length} 人已填寫・填表人數不限・${schedule.minPlayers} 人同時有空即達門檻</p><div class="best-slots" id="best-slots">${bestMarkup(best, submitted.length)}</div><div class="share-box"><input readonly value="${escapeHtml(location.href)}"><button class="button secondary" id="copy-quick" type="button">複製連結</button></div></aside>
+      <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${submitted.length} 人已填寫・填表人數不限・${schedule.minPlayers} 人同時有空即達門檻</p><div class="best-slots" id="best-slots">${bestMarkup(best, submitted.length)}</div><label>玩家填表連結<div class="share-box"><input id="player-link" readonly value="${escapeHtml(playerLink)}"><button class="button secondary" id="copy-quick" type="button">複製</button></div></label>${canManageSchedule ? `<div class="management-box"><h3>私人管理連結</h3><p>換裝置時用這條連結取回管理權限。請勿傳給玩家。</p>${privateLink ? `<div class="share-box"><input id="manager-link" readonly value="${escapeHtml(privateLink)}"><button class="button secondary" id="copy-manager" type="button">複製</button></div>` : '<p class="muted">發布新版 Firestore Rules 後即可產生。</p>'}<button class="button reject full" id="delete-current-schedule" type="button">刪除這張約團表</button></div>` : ""}</aside>
     </div>
     <section class="quick-card overview"><h2>玩家時間一覽</h2><p>每位玩家的選擇與備註會集中顯示在這裡。</p>${periodLegendMarkup(periodRanges)}<div id="overview-content">${overviewMarkup(submitted)}</div></section>
   </main>`;
@@ -233,8 +299,14 @@ function renderSchedule(mineData) {
   responseForm.onsubmit = saveResponse;
   responseForm.addEventListener("input", markResponseDirty);
   document.querySelector("#copy-quick").onclick = async () => {
-    try { await navigator.clipboard.writeText(location.href); toast("已複製分享連結"); } catch { toast("請手動複製網址。"); }
+    try { await navigator.clipboard.writeText(playerLink); toast("已複製玩家填表連結"); } catch { toast("請手動複製網址。"); }
   };
+  document.querySelector("#copy-manager")?.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(privateLink); toast("已複製私人管理連結"); } catch { toast("請手動複製網址。"); }
+  });
+  document.querySelector("#delete-current-schedule")?.addEventListener("click", event => {
+    deleteQuickSchedule(schedule.id, schedule.title, event.currentTarget);
+  });
 }
 
 function periodLegendMarkup(ranges) {
@@ -330,10 +402,23 @@ function overviewMarkup(players) {
 }
 
 async function handleRoute() {
-  const id = routeId();
-  if (id) await openSchedule(id);
+  const route = routeInfo();
+  if (route.id) {
+    if (route.token) {
+      try {
+        await claimManagementAccess(route.id, route.token);
+      } catch (error) {
+        console.error(error);
+        root.innerHTML = '<main class="error-screen"><h1>管理連結無效</h1><p>請確認連結完整，或請建立者重新提供。</p><a class="button" href="./quick.html">回快速約團</a></main>';
+        return;
+      }
+    }
+    await openSchedule(route.id);
+  }
   else {
     schedule = null;
+    canManageSchedule = false;
+    managementToken = "";
     unsubscribeResponses?.();
     unsubscribeResponses = null;
     renderCreate();
