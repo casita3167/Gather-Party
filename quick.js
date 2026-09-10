@@ -313,6 +313,7 @@ function renderSchedule(mineData) {
   </main>`;
   bindChoiceButtons();
   bindResponseCalendar(periodRanges);
+  bindOverviewActions();
   const responseForm = document.querySelector("#response-form");
   responseForm.onsubmit = saveResponse;
   responseForm.addEventListener("input", markResponseDirty);
@@ -345,7 +346,10 @@ function refreshOverview() {
   const overview = document.querySelector("#overview-content");
   if (count) count.textContent = `${submitted.length} 人已填寫・填表人數不限・${schedule.minPlayers} 人同時有空即達門檻`;
   if (best) best.innerHTML = bestMarkup(bestSlots(submitted), submitted.length);
-  if (overview) overview.innerHTML = overviewMarkup(submitted);
+  if (overview) {
+    overview.innerHTML = overviewMarkup(submitted);
+    bindOverviewActions();
+  }
   const calendar = document.querySelector("#response-calendar");
   if (calendar) {
     calendar.innerHTML = responseCalendarMarkup();
@@ -497,8 +501,29 @@ function overviewMarkup(players) {
   if (!players.length) return '<div class="empty">目前還沒有人填寫。</div>';
   return `<div class="player-availability-grid">${players.map(player => {
     const dates = Object.keys(player.choices || {}).sort();
-    return `<article class="player-availability"><h3>${escapeHtml(player.playerName)}</h3>${player.note ? `<p class="response-note">${escapeHtml(player.note)}</p>` : ""}<div>${dates.map(date => { const values = player.choices?.[date] || []; const label = values.includes("X") ? "X" : values.join("／"); return `<span class="player-date-choice"><b>${escapeHtml(dateLabel(date, true))}</b><i class="choice-mark ${values.includes("X") ? "no" : ""}">${escapeHtml(label || "未選時段")}</i></span>`; }).join("")}</div></article>`;
+    const deleteButton = player.id === user?.uid ? `<button class="delete-my-response" type="button" data-response-id="${escapeHtml(player.id)}" aria-label="刪除我的填寫" title="刪除我的填寫">×</button>` : "";
+    return `<article class="player-availability"><header><h3>${escapeHtml(player.playerName)}</h3>${deleteButton}</header>${player.note ? `<p class="response-note">${escapeHtml(player.note)}</p>` : ""}<div>${dates.map(date => { const values = player.choices?.[date] || []; const label = values.includes("X") ? "X" : values.join("／"); return `<span class="player-date-choice"><b>${escapeHtml(dateLabel(date, true))}</b><i class="choice-mark ${values.includes("X") ? "no" : ""}">${escapeHtml(label || "未選時段")}</i></span>`; }).join("")}</div></article>`;
   }).join("")}</div>`;
+}
+
+function bindOverviewActions() {
+  document.querySelector(".delete-my-response")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    if (!user || button.dataset.responseId !== user.uid) return;
+    if (!window.confirm("確定要刪除自己的填寫資料嗎？日期、時段與備註都會被移除。")) return;
+    button.disabled = true;
+    try {
+      await deleteDoc(doc(db, "quickSchedules", schedule.id, "responses", user.uid));
+      responses = responses.filter(player => player.id !== user.uid);
+      choices.clear();
+      renderSchedule(null);
+      toast("你的填寫資料已刪除");
+    } catch (error) {
+      console.error(error);
+      toast("刪除失敗，請稍後再試。");
+      button.disabled = false;
+    }
+  });
 }
 
 async function handleRoute() {
