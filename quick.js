@@ -714,14 +714,45 @@ function bestSlots(players) {
   return enough.sort((a, b) => b.count - a.count || a.date.localeCompare(b.date) || PERIOD_KEYS.indexOf(a.period) - PERIOD_KEYS.indexOf(b.period));
 }
 
+function areConsecutiveDates(previous, current) {
+  const previousTime = Date.parse(`${previous}T00:00:00Z`);
+  const currentTime = Date.parse(`${current}T00:00:00Z`);
+  return currentTime - previousTime === 86400000;
+}
+
+function compactDateRangeLabel(start, end) {
+  if (start === end) return dateLabel(start, true);
+  const [startYear, startMonth, startDay] = start.split("-").map(Number);
+  const [endYear, endMonth, endDay] = end.split("-").map(Number);
+  if (startYear === endYear) return `${startMonth}/${startDay}～${endMonth}/${endDay}`;
+  return `${startYear}/${startMonth}/${startDay}～${endYear}/${endMonth}/${endDay}`;
+}
+
+function groupedPlayerChoices(choiceObject = {}) {
+  const groups = [];
+  for (const date of Object.keys(choiceObject).sort()) {
+    const values = choiceObject[date] || [];
+    const label = values.includes("X")
+      ? "X"
+      : PERIOD_KEYS.filter(period => values.includes(period)).join("／") || "未選時段";
+    const previous = groups.at(-1);
+    if (previous && previous.label === label && areConsecutiveDates(previous.end, date)) {
+      previous.end = date;
+    } else {
+      groups.push({ start: date, end: date, label, isUnavailable: values.includes("X") });
+    }
+  }
+  return groups;
+}
+
 function overviewMarkup(players) {
   if (!players.length) return '<div class="empty">目前還沒有人填寫。</div>';
   return `<div class="player-availability-grid">${players.map(player => {
-    const dates = Object.keys(player.choices || {}).sort();
+    const groupedChoices = groupedPlayerChoices(player.choices);
     const canDelete = player.id === user?.uid || canManageSchedule;
     const deleteLabel = player.id === user?.uid ? "刪除我的填寫" : `刪除 ${player.playerName} 的登記`;
     const deleteButton = canDelete ? `<button class="delete-my-response" type="button" data-response-id="${escapeHtml(player.id)}" data-player-name="${escapeHtml(player.playerName)}" aria-label="${escapeHtml(deleteLabel)}" title="${escapeHtml(deleteLabel)}">×</button>` : "";
-    return `<article class="player-availability"><header><h3>${escapeHtml(player.playerName)}</h3>${deleteButton}</header>${player.note ? `<p class="response-note">${escapeHtml(player.note)}</p>` : ""}<div>${dates.map(date => { const values = player.choices?.[date] || []; const label = values.includes("X") ? "X" : values.join("／"); return `<span class="player-date-choice"><b>${escapeHtml(dateLabel(date, true))}</b><i class="choice-mark ${values.includes("X") ? "no" : ""}">${escapeHtml(label || "未選時段")}</i></span>`; }).join("")}</div></article>`;
+    return `<article class="player-availability"><header><h3>${escapeHtml(player.playerName)}</h3>${deleteButton}</header>${player.note ? `<p class="response-note">${escapeHtml(player.note)}</p>` : ""}<div>${groupedChoices.map(group => `<span class="player-date-choice"><b>${escapeHtml(compactDateRangeLabel(group.start, group.end))}</b><i class="choice-mark ${group.isUnavailable ? "no" : ""}">${escapeHtml(group.label)}</i></span>`).join("")}</div></article>`;
   }).join("")}</div>`;
 }
 
