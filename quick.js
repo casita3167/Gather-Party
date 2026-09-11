@@ -575,7 +575,7 @@ function choiceRow(date, ranges) {
 }
 
 function bindChoiceButtons() {
-  document.querySelectorAll(".choice-button").forEach(button => button.onclick = () => {
+  document.querySelectorAll(".choice-button[data-date]").forEach(button => button.onclick = () => {
     const set = choices.get(button.dataset.date) || new Set();
     const value = button.dataset.choice;
     if (value === "X") {
