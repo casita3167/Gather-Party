@@ -340,23 +340,53 @@ function normalizedPlayerName(name = "") {
   return String(name).trim().normalize("NFKC").toLocaleLowerCase("zh-Hant-TW");
 }
 
+function mergedResponseChoices(group) {
+  const merged = {};
+  for (const response of group) {
+    for (const [date, values] of Object.entries(response.choices || {})) {
+      const selected = new Set(merged[date] || []);
+      const availablePeriods = PERIOD_KEYS.filter(period => values.includes(period));
+      if (availablePeriods.length) {
+        selected.delete("X");
+        availablePeriods.forEach(period => selected.add(period));
+      } else if (values.includes("X") && !PERIOD_KEYS.some(period => selected.has(period))) {
+        selected.add("X");
+      }
+      if (selected.size) {
+        merged[date] = [
+          ...PERIOD_KEYS.filter(period => selected.has(period)),
+          ...(selected.has("X") ? ["X"] : [])
+        ];
+      }
+    }
+  }
+  return merged;
+}
+
 function uniqueSubmittedResponses(items = []) {
-  const responsesByName = new Map();
+  const responseGroups = new Map();
   for (const response of items.filter(item => item.submitted)) {
     const nameKey = normalizedPlayerName(response.playerName) || `__response__${response.id}`;
-    const existing = responsesByName.get(nameKey);
-    if (!existing) {
-      responsesByName.set(nameKey, { ...response, responseIds: [response.id] });
-      continue;
-    }
-
-    const responseIds = [...new Set([...(existing.responseIds || [existing.id]), response.id])];
-    const latest = responseUpdatedMillis(response) >= responseUpdatedMillis(existing)
-      ? response
-      : existing;
-    responsesByName.set(nameKey, { ...latest, responseIds });
+    const group = responseGroups.get(nameKey) || [];
+    group.push(response);
+    responseGroups.set(nameKey, group);
   }
-  return [...responsesByName.values()];
+
+  return [...responseGroups.values()].map(group => {
+    const latest = [...group].sort((a, b) =>
+      responseUpdatedMillis(b) - responseUpdatedMillis(a)
+    )[0];
+    const choices = mergedResponseChoices(group);
+    const notes = [...new Set(group.map(response => response.note?.trim()).filter(Boolean))];
+    return {
+      ...latest,
+      choices,
+      batchGroups: Object.fromEntries(normalizeBatchGroups(choices)),
+      note: notes.join("／"),
+      responseIds: group.map(response => response.id),
+      mergedCount: group.length
+    };
+  });
 }
 
 function renderSchedule(mineData) {
@@ -870,7 +900,10 @@ function overviewMarkup(players) {
     const canDelete = isMine || canManageSchedule;
     const deleteLabel = isMine ? "刪除我的填寫" : `刪除 ${player.playerName} 的登記`;
     const deleteButton = canDelete ? `<button class="delete-my-response" type="button" data-response-ids="${escapeHtml(responseIds.join(","))}" data-player-name="${escapeHtml(player.playerName)}" aria-label="${escapeHtml(deleteLabel)}" title="${escapeHtml(deleteLabel)}">×</button>` : "";
-    return `<article class="player-availability"><header><h3>${escapeHtml(player.playerName)}</h3>${deleteButton}</header>${player.note ? `<p class="response-note">${escapeHtml(player.note)}</p>` : ""}<div>${groupedChoices.map(group => `<span class="player-date-choice"><b>${escapeHtml(compactDateRangeLabel(group.start, group.end))}</b><i class="choice-mark ${group.isUnavailable ? "no" : ""}">${escapeHtml(group.label)}</i></span>`).join("")}</div></article>`;
+    const mergeNotice = player.mergedCount > 1
+      ? `<p class="response-note">已將 ${player.mergedCount} 筆同名填寫合併整理。請確認下方日期與時段是否正確；若不正確，請由管理者刪除後再重新填寫。</p>`
+      : "";
+    return `<article class="player-availability"><header><h3>${escapeHtml(player.playerName)}</h3>${deleteButton}</header>${mergeNotice}${player.note ? `<p class="response-note">${escapeHtml(player.note)}</p>` : ""}<div>${groupedChoices.map(group => `<span class="player-date-choice"><b>${escapeHtml(compactDateRangeLabel(group.start, group.end))}</b><i class="choice-mark ${group.isUnavailable ? "no" : ""}">${escapeHtml(group.label)}</i></span>`).join("")}</div></article>`;
   }).join("")}</div>`;
 }
 
