@@ -633,6 +633,7 @@ function bindResponseDayButtons(ranges) {
       if (batchApplied) {
         batchDates.clear();
         batchApplied = false;
+        document.querySelectorAll(".quick-day.batch-target").forEach(item => item.classList.remove("batch-target"));
       }
       choices.set(date, new Set());
       batchDates.add(date);
