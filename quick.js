@@ -21,6 +21,7 @@ let responseMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth
 let schedule = null;
 let responses = [];
 let choices = new Map();
+let batchGroups = new Map();
 let batchDates = new Set();
 let batchApplied = false;
 let unsubscribeResponses = null;
@@ -231,6 +232,7 @@ async function openSchedule(id, routeManagementToken = "") {
     const savedChoices = mineData?.choices || {};
     const initialDates = mineData ? Object.keys(savedChoices) : (schedule.dates || []);
     choices = new Map(initialDates.map(date => [date, new Set(savedChoices[date] || [])]));
+    batchGroups = normalizeBatchGroups(savedChoices, mineData?.batchGroups || {});
     batchDates = new Set();
     batchApplied = false;
     const firstDate = [...choices.keys()].sort()[0];
@@ -242,7 +244,10 @@ async function openSchedule(id, routeManagementToken = "") {
       responses = result.docs.map(item => ({ id: item.id, ...item.data() }));
       if (!rendered) {
         const latestMine = responses.find(item => item.id === user.uid) || mineData;
-        if (latestMine) choices = new Map(Object.entries(latestMine.choices || {}).map(([date, values]) => [date, new Set(values)]));
+        if (latestMine) {
+          choices = new Map(Object.entries(latestMine.choices || {}).map(([date, values]) => [date, new Set(values)]));
+          batchGroups = normalizeBatchGroups(latestMine.choices || {}, latestMine.batchGroups || {});
+        }
         renderSchedule(latestMine);
         rendered = true;
       } else {
@@ -336,7 +341,7 @@ function renderSchedule(mineData) {
     <a class="quick-back" href="./quick.html" aria-label="回到建立快速約團頁面">← 上一頁：建立快速約團</a>
     <section class="schedule-banner"><div><span class="eyebrow">QUICK SCHEDULER</span><h1>${escapeHtml(schedule.title)}</h1><p>建立者／統計者：${escapeHtml(schedule.coordinatorName)}${schedule.gmName ? `・實際 GM：${escapeHtml(schedule.gmName)}` : ""}</p></div>${schedule.contact ? `<div class="contact-card"><span>給玩家的聯絡方式</span><b>${escapeHtml(schedule.contact)}</b></div>` : ""}</section>
     ${schedule.note ? `<p class="quick-note">${escapeHtml(schedule.note)}</p>` : ""}
-    <div class="schedule-grid"><form id="response-form" class="quick-card"><h2>填寫我的時間</h2><p>先從月曆點選你要填寫的日期，再選早上、下午、晚上或 X。儲存後仍可隨時回來修改日期。</p>${periodLegendMarkup(periodRanges)}<label>玩家名稱<input name="playerName" maxlength="30" value="${escapeHtml(mineData?.playerName || localStorage.getItem("gather-party-player") || "")}" required></label><div class="date-picker-head"><h3 id="response-month-title">${responseMonthCursor.getFullYear()} 年 ${responseMonthCursor.getMonth() + 1} 月</h3><div class="date-picker-nav"><button class="mini-button" id="response-prev" type="button">‹</button><button class="mini-button" id="response-today" type="button">今</button><button class="mini-button" id="response-next" type="button">›</button></div></div><div class="date-preset-bar" aria-label="快速選擇本月日期"><span>快速選日期</span><button class="date-preset-button" type="button" data-date-preset="weekdays">週一～週五</button><button class="date-preset-button" type="button" data-date-preset="weekends">週末</button><button class="date-preset-button" type="button" data-date-preset="all">全月</button><button class="date-preset-button clear" type="button" data-date-preset="clear">清除本月</button></div><div id="response-calendar">${responseCalendarMarkup()}</div><section class="batch-choice-panel"><div><h3>批次設定時段</h3><p id="batch-choice-count">目前批次 0 天</p><small>套用後，再點新的日期就會自動開始下一批；先前設定不會被改到。</small></div><div class="batch-choice-actions">${PERIOD_KEYS.map(period => `<button class="choice-button batch-choice-button" type="button" data-batch-choice="${period}">${period}</button>`).join("")}<button class="choice-button no batch-choice-button" type="button" data-batch-choice="X">X</button><button class="choice-button clear batch-choice-button" type="button" data-batch-choice="clear">清除時段</button></div></section><details class="choice-details" id="choice-details" ${choices.size <= 3 ? "open" : ""}><summary>逐日調整 <span id="choice-summary-count">${choices.size} 天</span></summary><div class="choice-list" id="response-choice-list">${responseChoiceListMarkup(periodRanges)}</div></details><label>備註<textarea name="note" maxlength="500" placeholder="例如：晚上九點後才有空、這天可能需要再確認">${escapeHtml(mineData?.note || "")}</textarea></label><div class="quick-form-actions"><span class="muted">至少選擇一個日期，且每個日期都要選時段或 X</span><button class="button" type="submit">${mineData?.submitted ? "儲存變更" : "儲存我的時間"}</button></div></form>
+    <div class="schedule-grid"><form id="response-form" class="quick-card"><h2>填寫我的時間</h2><p>先從月曆點選你要填寫的日期，再選早上、下午、晚上或 X。儲存後仍可隨時回來修改日期。</p>${periodLegendMarkup(periodRanges)}<label>玩家名稱<input name="playerName" maxlength="30" value="${escapeHtml(mineData?.playerName || localStorage.getItem("gather-party-player") || "")}" required></label><div class="date-picker-head"><h3 id="response-month-title">${responseMonthCursor.getFullYear()} 年 ${responseMonthCursor.getMonth() + 1} 月</h3><div class="date-picker-nav"><button class="mini-button" id="response-prev" type="button">‹</button><button class="mini-button" id="response-today" type="button">今</button><button class="mini-button" id="response-next" type="button">›</button></div></div><div class="date-preset-bar" aria-label="快速選擇本月日期"><span>快速選日期</span><button class="date-preset-button" type="button" data-date-preset="weekdays">週一～週五</button><button class="date-preset-button" type="button" data-date-preset="weekends">週末</button><button class="date-preset-button" type="button" data-date-preset="all">全月</button><button class="date-preset-button clear" type="button" data-date-preset="clear">清除本月</button></div><div id="response-calendar">${responseCalendarMarkup()}</div><section class="batch-choice-panel"><div><h3>批次設定時段</h3><p id="batch-choice-count">目前批次 0 天</p><small>套用時段後按「儲存時間」，日期會收進編號批次；接著即可繼續選下一批。</small></div><div class="batch-choice-actions">${PERIOD_KEYS.map(period => `<button class="choice-button batch-choice-button" type="button" data-batch-choice="${period}">${period}</button>`).join("")}<button class="choice-button no batch-choice-button" type="button" data-batch-choice="X">X</button><button class="choice-button clear batch-choice-button" type="button" data-batch-choice="clear">清除時段</button></div></section><details class="choice-details" id="choice-details" ${choices.size <= 3 ? "open" : ""}><summary>逐日調整 <span id="choice-summary-count">${choices.size} 天</span></summary><div class="choice-list" id="response-choice-list">${responseChoiceListMarkup(periodRanges)}</div></details><label>備註<textarea name="note" maxlength="500" placeholder="例如：晚上九點後才有空、這天可能需要再確認">${escapeHtml(mineData?.note || "")}</textarea></label><div class="quick-form-actions"><span class="muted">至少選擇一個日期，且每個日期都要選時段或 X</span><button class="button" type="submit">儲存時間</button></div></form>
       <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${submitted.length} 人已填寫・填表人數不限・${schedule.minPlayers} 人同時有空即達門檻</p><div class="best-slots" id="best-slots">${bestMarkup(best, submitted.length)}</div><label>玩家填表連結<div class="share-box"><input id="player-link" readonly value="${escapeHtml(playerLink)}" aria-label="玩家填表短網址"><button class="button secondary" id="copy-quick" type="button">複製</button></div></label>${canManageSchedule ? `<div class="management-box"><h3>私人管理連結</h3><p>換裝置時用這條隨機短網址取回管理權限，請勿傳給玩家。</p>${privateLink ? `<div class="share-box"><input id="manager-link" readonly value="${escapeHtml(privateLink)}" aria-label="私人管理短網址"><button class="button secondary" id="copy-manager" type="button">複製</button></div>` : '<p class="muted">私人管理連結建立中。</p>'}<div class="management-actions"><button class="button secondary full" id="edit-current-schedule" type="button">編輯約團設定</button><button class="button reject full" id="delete-current-schedule" type="button">刪除這張約團表</button></div></div>` : ""}</aside>
     </div>
     <section class="quick-card overview"><h2>玩家時間一覽</h2><p>每位玩家的選擇與備註會集中顯示在這裡。</p>${periodLegendMarkup(periodRanges)}<div id="overview-content">${overviewMarkup(submitted)}</div></section>
@@ -477,10 +482,14 @@ function responseCalendarMarkup() {
   for (let day = 1; day <= total; day++) {
     const date = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     const holiday = holidayFor(date);
-    const selected = choices.has(date);
+    const chosen = choices.has(date);
     const inBatch = batchDates.has(date);
+    const batchNumber = batchGroups.get(date);
     const dayNote = holiday || (date === today ? "今天" : "");
-    cells.push(`<button class="quick-day ${selected ? "selected" : ""} ${inBatch ? "batch-target" : ""} ${holiday ? "holiday" : ""} ${date === today ? "today" : ""}" type="button" data-response-date="${date}" title="${escapeHtml(inBatch ? `目前批次・${dayNote || date}` : dayNote || date)}" aria-pressed="${selected}"><span>${day}</span>${calendarPlayersMarkup(date)}${dayNote ? `<small>${escapeHtml(dayNote)}</small>` : ""}</button>`);
+    const title = inBatch
+      ? `目前選取・${dayNote || date}`
+      : batchNumber ? `第 ${batchNumber} 批・${dayNote || date}` : dayNote || date;
+    cells.push(`<button class="quick-day ${inBatch ? "selected batch-target" : ""} ${chosen && !inBatch ? "committed" : ""} ${holiday ? "holiday" : ""} ${date === today ? "today" : ""}" type="button" data-response-date="${date}" title="${escapeHtml(title)}" aria-pressed="${chosen}"><span>${day}</span>${batchNumber && !inBatch ? `<span class="calendar-batch-number" aria-label="第 ${batchNumber} 批">${batchNumber}</span>` : ""}${calendarPlayersMarkup(date)}${dayNote ? `<small>${escapeHtml(dayNote)}</small>` : ""}</button>`);
   }
   return `<div class="quick-calendar"><div class="quick-weekday">一</div><div class="quick-weekday">二</div><div class="quick-weekday">三</div><div class="quick-weekday">四</div><div class="quick-weekday">五</div><div class="quick-weekday">六</div><div class="quick-weekday">日</div>${cells.join("")}</div>`;
 }
@@ -498,7 +507,7 @@ function updateChoiceControlState() {
   const batchCountNode = document.querySelector("#batch-choice-count");
   const summaryCount = document.querySelector("#choice-summary-count");
   if (batchCountNode) batchCountNode.textContent = batchCount
-    ? `目前批次 ${batchCount} 天${batchApplied ? "・可繼續加選時段，或點新日期開始下一批" : ""}`
+    ? `目前批次 ${batchCount} 天${batchApplied ? "・完成後請儲存時間" : ""}`
     : (totalCount ? "請從月曆點選下一批日期" : "請先從月曆選擇日期");
   if (summaryCount) summaryCount.textContent = `${totalCount} 天`;
   document.querySelectorAll("[data-batch-choice]").forEach(button => {
@@ -551,7 +560,10 @@ function applyMonthDatePreset(preset, ranges, refreshCalendar) {
 
   if (preset === "clear") {
     for (const date of [...choices.keys()]) {
-      if (date.startsWith(monthPrefix)) choices.delete(date);
+      if (date.startsWith(monthPrefix)) {
+        choices.delete(date);
+        batchGroups.delete(date);
+      }
     }
     for (const date of [...batchDates]) {
       if (date.startsWith(monthPrefix)) batchDates.delete(date);
@@ -563,6 +575,8 @@ function applyMonthDatePreset(preset, ranges, refreshCalendar) {
     toast("已清除本月選取日期");
     return;
   }
+
+  if (batchApplied) return toast("請先按「儲存時間」完成目前批次。");
 
   const dates = [];
   for (let day = 1; day <= total; day += 1) {
@@ -627,19 +641,17 @@ function bindResponseDayButtons(ranges) {
     const date = button.dataset.responseDate;
     if (choices.has(date)) {
       choices.delete(date);
+      batchGroups.delete(date);
       batchDates.delete(date);
     } else {
       if (choices.size >= 31) return toast("一次最多可填寫 31 個日期。");
-      if (batchApplied) {
-        batchDates.clear();
-        batchApplied = false;
-        document.querySelectorAll(".quick-day.batch-target").forEach(item => item.classList.remove("batch-target"));
-      }
+      if (batchApplied) return toast("請先按「儲存時間」完成目前批次。");
       choices.set(date, new Set());
       batchDates.add(date);
     }
-    button.classList.toggle("selected", choices.has(date));
+    button.classList.toggle("selected", batchDates.has(date));
     button.classList.toggle("batch-target", batchDates.has(date));
+    button.classList.toggle("committed", choices.has(date) && !batchDates.has(date));
     button.setAttribute("aria-pressed", String(choices.has(date)));
     refreshChoiceControls(ranges);
     markResponseDirty();
@@ -674,7 +686,7 @@ function bindChoiceButtons() {
 
 function markResponseDirty() {
   const button = document.querySelector('#response-form button[type="submit"]');
-  if (button) button.textContent = "儲存變更";
+  if (button) button.textContent = "儲存時間";
 }
 
 async function saveResponse(event) {
@@ -685,18 +697,39 @@ async function saveResponse(event) {
   const button = form.querySelector('button[type="submit"]');
   button.disabled = true;
   const choiceObject = Object.fromEntries([...choices.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, values]) => [date, [...values]]));
+  const nextBatchGroups = new Map(batchGroups);
+  let savedBatchNumber = 0;
+  if (batchDates.size) {
+    savedBatchNumber = Math.max(0, ...nextBatchGroups.values()) + 1;
+    for (const date of batchDates) {
+      if (choices.has(date)) nextBatchGroups.set(date, savedBatchNumber);
+    }
+  }
+  const batchGroupObject = Object.fromEntries(
+    [...nextBatchGroups.entries()].filter(([date]) => choices.has(date))
+  );
   try {
     await setDoc(doc(db, "quickSchedules", schedule.id, "responses", user.uid), {
       playerName: form.playerName.value.trim(),
       note: form.note.value.trim(),
       choices: choiceObject,
+      batchGroups: batchGroupObject,
       submitted: true,
       updatedAt: serverTimestamp()
     });
+    batchGroups = nextBatchGroups;
+    batchDates.clear();
+    batchApplied = false;
     localStorage.setItem("gather-party-player", form.playerName.value.trim());
+    const calendar = document.querySelector("#response-calendar");
+    if (calendar) {
+      calendar.innerHTML = responseCalendarMarkup();
+      bindResponseDayButtons(schedule.periods || {});
+    }
+    refreshChoiceControls(schedule.periods || {});
     button.disabled = false;
-    button.textContent = "已儲存！仍可繼續修改";
-    toast("你的時間已儲存");
+    button.textContent = "已儲存，可繼續新增時間";
+    toast(savedBatchNumber ? `第 ${savedBatchNumber} 批時間已儲存` : "你的時間已儲存");
   } catch (error) {
     console.error(error);
     toast("儲存失敗，請稍後再試。");
@@ -728,18 +761,63 @@ function compactDateRangeLabel(start, end) {
   return `${startYear}/${startMonth}/${startDay}～${endYear}/${endMonth}/${endDay}`;
 }
 
-function groupedPlayerChoices(choiceObject = {}) {
+function choiceLabel(values = []) {
+  return values.includes("X")
+    ? "X"
+    : PERIOD_KEYS.filter(period => values.includes(period)).join("／") || "未選時段";
+}
+
+function normalizeBatchGroups(choiceObject = {}, savedGroups = {}) {
+  const result = new Map();
+  let highest = 0;
+  for (const [date, value] of Object.entries(savedGroups)) {
+    const number = Number(value);
+    if (choiceObject[date] && Number.isInteger(number) && number > 0) {
+      result.set(date, number);
+      highest = Math.max(highest, number);
+    }
+  }
+
+  let previousDate = "";
+  let previousLabel = "";
+  let previousGroup = 0;
+  for (const date of Object.keys(choiceObject).sort()) {
+    const label = choiceLabel(choiceObject[date]);
+    let group = result.get(date);
+    if (!group) {
+      group = previousGroup && previousLabel === label && areConsecutiveDates(previousDate, date)
+        ? previousGroup
+        : ++highest;
+      result.set(date, group);
+    }
+    previousDate = date;
+    previousLabel = label;
+    previousGroup = group;
+  }
+  return result;
+}
+
+function groupedPlayerChoices(choiceObject = {}, savedGroups = {}) {
   const groups = [];
+  const normalizedGroups = normalizeBatchGroups(choiceObject, savedGroups);
   for (const date of Object.keys(choiceObject).sort()) {
     const values = choiceObject[date] || [];
-    const label = values.includes("X")
-      ? "X"
-      : PERIOD_KEYS.filter(period => values.includes(period)).join("／") || "未選時段";
+    const label = choiceLabel(values);
+    const batchNumber = normalizedGroups.get(date);
     const previous = groups.at(-1);
-    if (previous && previous.label === label && areConsecutiveDates(previous.end, date)) {
+    if (previous
+      && previous.batchNumber === batchNumber
+      && previous.label === label
+      && areConsecutiveDates(previous.end, date)) {
       previous.end = date;
     } else {
-      groups.push({ start: date, end: date, label, isUnavailable: values.includes("X") });
+      groups.push({
+        start: date,
+        end: date,
+        label,
+        batchNumber,
+        isUnavailable: values.includes("X")
+      });
     }
   }
   return groups;
@@ -748,7 +826,7 @@ function groupedPlayerChoices(choiceObject = {}) {
 function overviewMarkup(players) {
   if (!players.length) return '<div class="empty">目前還沒有人填寫。</div>';
   return `<div class="player-availability-grid">${players.map(player => {
-    const groupedChoices = groupedPlayerChoices(player.choices);
+    const groupedChoices = groupedPlayerChoices(player.choices, player.batchGroups);
     const canDelete = player.id === user?.uid || canManageSchedule;
     const deleteLabel = player.id === user?.uid ? "刪除我的填寫" : `刪除 ${player.playerName} 的登記`;
     const deleteButton = canDelete ? `<button class="delete-my-response" type="button" data-response-id="${escapeHtml(player.id)}" data-player-name="${escapeHtml(player.playerName)}" aria-label="${escapeHtml(deleteLabel)}" title="${escapeHtml(deleteLabel)}">×</button>` : "";
@@ -773,6 +851,7 @@ function bindOverviewActions() {
       responses = responses.filter(player => player.id !== responseId);
       if (isMine) {
         choices.clear();
+        batchGroups.clear();
         batchDates.clear();
         batchApplied = false;
         renderSchedule(null);
