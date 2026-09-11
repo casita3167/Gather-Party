@@ -332,7 +332,7 @@ function renderSchedule(mineData) {
     <a class="quick-back" href="./quick.html" aria-label="回到建立快速約團頁面">← 上一頁：建立快速約團</a>
     <section class="schedule-banner"><div><span class="eyebrow">QUICK SCHEDULER</span><h1>${escapeHtml(schedule.title)}</h1><p>建立者／統計者：${escapeHtml(schedule.coordinatorName)}${schedule.gmName ? `・實際 GM：${escapeHtml(schedule.gmName)}` : ""}</p></div>${schedule.contact ? `<div class="contact-card"><span>給玩家的聯絡方式</span><b>${escapeHtml(schedule.contact)}</b></div>` : ""}</section>
     ${schedule.note ? `<p class="quick-note">${escapeHtml(schedule.note)}</p>` : ""}
-    <div class="schedule-grid"><form id="response-form" class="quick-card"><h2>填寫我的時間</h2><p>先從月曆點選你要填寫的日期，再選早上、下午、晚上或 X。儲存後仍可隨時回來修改日期。</p>${periodLegendMarkup(periodRanges)}<label>玩家名稱<input name="playerName" maxlength="30" value="${escapeHtml(mineData?.playerName || localStorage.getItem("gather-party-player") || "")}" required></label><div class="date-picker-head"><h3 id="response-month-title">${responseMonthCursor.getFullYear()} 年 ${responseMonthCursor.getMonth() + 1} 月</h3><div class="date-picker-nav"><button class="mini-button" id="response-prev" type="button">‹</button><button class="mini-button" id="response-today" type="button">今</button><button class="mini-button" id="response-next" type="button">›</button></div></div><div id="response-calendar">${responseCalendarMarkup()}</div><section class="batch-choice-panel"><div><h3>批次設定時段</h3><p id="batch-choice-count">已選 ${choices.size} 天</p></div><div class="batch-choice-actions">${PERIOD_KEYS.map(period => `<button class="choice-button batch-choice-button" type="button" data-batch-choice="${period}">${period}</button>`).join("")}<button class="choice-button no batch-choice-button" type="button" data-batch-choice="X">X</button><button class="choice-button clear batch-choice-button" type="button" data-batch-choice="clear">清除時段</button></div></section><details class="choice-details" id="choice-details" ${choices.size <= 3 ? "open" : ""}><summary>逐日調整 <span id="choice-summary-count">${choices.size} 天</span></summary><div class="choice-list" id="response-choice-list">${responseChoiceListMarkup(periodRanges)}</div></details><label>備註<textarea name="note" maxlength="500" placeholder="例如：晚上九點後才有空、這天可能需要再確認">${escapeHtml(mineData?.note || "")}</textarea></label><div class="quick-form-actions"><span class="muted">至少選擇一個日期，且每個日期都要選時段或 X</span><button class="button" type="submit">${mineData?.submitted ? "儲存變更" : "儲存我的時間"}</button></div></form>
+    <div class="schedule-grid"><form id="response-form" class="quick-card"><h2>填寫我的時間</h2><p>先從月曆點選你要填寫的日期，再選早上、下午、晚上或 X。儲存後仍可隨時回來修改日期。</p>${periodLegendMarkup(periodRanges)}<label>玩家名稱<input name="playerName" maxlength="30" value="${escapeHtml(mineData?.playerName || localStorage.getItem("gather-party-player") || "")}" required></label><div class="date-picker-head"><h3 id="response-month-title">${responseMonthCursor.getFullYear()} 年 ${responseMonthCursor.getMonth() + 1} 月</h3><div class="date-picker-nav"><button class="mini-button" id="response-prev" type="button">‹</button><button class="mini-button" id="response-today" type="button">今</button><button class="mini-button" id="response-next" type="button">›</button></div></div><div class="date-preset-bar" aria-label="快速選擇本月日期"><span>快速選日期</span><button class="date-preset-button" type="button" data-date-preset="weekdays">週一～週五</button><button class="date-preset-button" type="button" data-date-preset="weekends">週末</button><button class="date-preset-button" type="button" data-date-preset="all">全月</button><button class="date-preset-button clear" type="button" data-date-preset="clear">清除本月</button></div><div id="response-calendar">${responseCalendarMarkup()}</div><section class="batch-choice-panel"><div><h3>批次設定時段</h3><p id="batch-choice-count">已選 ${choices.size} 天</p></div><div class="batch-choice-actions">${PERIOD_KEYS.map(period => `<button class="choice-button batch-choice-button" type="button" data-batch-choice="${period}">${period}</button>`).join("")}<button class="choice-button no batch-choice-button" type="button" data-batch-choice="X">X</button><button class="choice-button clear batch-choice-button" type="button" data-batch-choice="clear">清除時段</button></div></section><details class="choice-details" id="choice-details" ${choices.size <= 3 ? "open" : ""}><summary>逐日調整 <span id="choice-summary-count">${choices.size} 天</span></summary><div class="choice-list" id="response-choice-list">${responseChoiceListMarkup(periodRanges)}</div></details><label>備註<textarea name="note" maxlength="500" placeholder="例如：晚上九點後才有空、這天可能需要再確認">${escapeHtml(mineData?.note || "")}</textarea></label><div class="quick-form-actions"><span class="muted">至少選擇一個日期，且每個日期都要選時段或 X</span><button class="button" type="submit">${mineData?.submitted ? "儲存變更" : "儲存我的時間"}</button></div></form>
       <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${submitted.length} 人已填寫・填表人數不限・${schedule.minPlayers} 人同時有空即達門檻</p><div class="best-slots" id="best-slots">${bestMarkup(best, submitted.length)}</div><label>玩家填表連結<div class="share-box"><input id="player-link" readonly value="${escapeHtml(playerLink)}" aria-label="玩家填表短網址"><button class="button secondary" id="copy-quick" type="button">複製</button></div></label>${canManageSchedule ? `<div class="management-box"><h3>私人管理連結</h3><p>換裝置時用這條隨機短網址取回管理權限，請勿傳給玩家。</p>${privateLink ? `<div class="share-box"><input id="manager-link" readonly value="${escapeHtml(privateLink)}" aria-label="私人管理短網址"><button class="button secondary" id="copy-manager" type="button">複製</button></div>` : '<p class="muted">私人管理連結建立中。</p>'}<div class="management-actions"><button class="button secondary full" id="edit-current-schedule" type="button">編輯約團設定</button><button class="button reject full" id="delete-current-schedule" type="button">刪除這張約團表</button></div></div>` : ""}</aside>
     </div>
     <section class="quick-card overview"><h2>玩家時間一覽</h2><p>每位玩家的選擇與備註會集中顯示在這裡。</p>${periodLegendMarkup(periodRanges)}<div id="overview-content">${overviewMarkup(submitted)}</div></section>
@@ -533,12 +533,56 @@ function bindChoiceControls(ranges) {
   updateChoiceControlState();
 }
 
+function applyMonthDatePreset(preset, ranges, refreshCalendar) {
+  const year = responseMonthCursor.getFullYear();
+  const month = responseMonthCursor.getMonth();
+  const total = new Date(year, month + 1, 0).getDate();
+  const monthPrefix = `${year}-${String(month + 1).padStart(2, "0")}-`;
+
+  if (preset === "clear") {
+    for (const date of [...choices.keys()]) {
+      if (date.startsWith(monthPrefix)) choices.delete(date);
+    }
+    refreshCalendar();
+    refreshChoiceControls(ranges);
+    markResponseDirty();
+    toast("已清除本月選取日期");
+    return;
+  }
+
+  const dates = [];
+  for (let day = 1; day <= total; day += 1) {
+    const weekday = new Date(year, month, day).getDay();
+    const matches = preset === "all"
+      || (preset === "weekdays" && weekday >= 1 && weekday <= 5)
+      || (preset === "weekends" && (weekday === 0 || weekday === 6));
+    if (matches) dates.push(`${monthPrefix}${String(day).padStart(2, "0")}`);
+  }
+
+  const remaining = Math.max(0, 31 - choices.size);
+  const newDates = dates.filter(date => !choices.has(date));
+  newDates.slice(0, remaining).forEach(date => choices.set(date, new Set()));
+  refreshCalendar();
+  refreshChoiceControls(ranges);
+  markResponseDirty();
+
+  if (newDates.length > remaining) {
+    toast("最多可選 31 天，已加入可容納的日期。");
+  } else {
+    const label = preset === "weekdays" ? "週一～週五" : preset === "weekends" ? "週末" : "全月";
+    toast(`已選取本月${label}`);
+  }
+}
+
 function bindResponseCalendar(ranges) {
   const refreshCalendar = () => {
     document.querySelector("#response-month-title").textContent = `${responseMonthCursor.getFullYear()} 年 ${responseMonthCursor.getMonth() + 1} 月`;
     document.querySelector("#response-calendar").innerHTML = responseCalendarMarkup();
     bindResponseDayButtons(ranges);
   };
+  document.querySelectorAll("[data-date-preset]").forEach(button => {
+    button.onclick = () => applyMonthDatePreset(button.dataset.datePreset, ranges, refreshCalendar);
+  });
   document.querySelector("#response-prev").onclick = () => {
     responseMonthCursor = new Date(responseMonthCursor.getFullYear(), responseMonthCursor.getMonth() - 1, 1);
     refreshCalendar();
