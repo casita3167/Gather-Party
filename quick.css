@@ -92,7 +92,7 @@
 .period-legend { display:flex; flex-wrap:wrap; gap:7px; margin:0 0 16px; }
 .period-legend span { display:inline-flex; align-items:center; gap:6px; padding:7px 10px; border:1px solid #d9d5f8; border-radius:999px; color:#4c477b; background:var(--primary-soft); font-size:.8rem; }
 .period-legend b { color:var(--primary); }
-.choice-row { display:grid; grid-template-columns:minmax(130px,1fr) repeat(4,70px); gap:6px; align-items:center; padding:10px; border:1px solid var(--line); border-radius:13px; background:#fcfcfd; }
+.choice-row { display:grid; grid-template-columns:minmax(130px,1fr) repeat(5,minmax(40px,60px)); gap:6px; align-items:center; padding:10px; border:1px solid var(--line); border-radius:13px; background:#fcfcfd; }
 .choice-date b,.choice-date span { display:block; }
 .choice-date span { margin-top:3px; color:var(--muted); font-size:.75rem; }
 .choice-button { min-height:43px; padding:6px; border:1px solid var(--line); border-radius:9px; color:var(--muted); background:white; font-weight:850; }
@@ -167,7 +167,7 @@
   .batch-choice-button { min-width:0; }
   .batch-choice-button.clear { grid-column:span 2; }
   .choice-list { max-height:300px; }
-  .choice-row { grid-template-columns:repeat(4,1fr); }
+  .choice-row { grid-template-columns:repeat(5,minmax(0,1fr)); }
   .choice-date { grid-column:1/-1; }
   .choice-button { min-width:0; }
   .quick-form-actions { align-items:stretch; flex-direction:column; }
@@ -186,3 +186,5 @@
   .quick-create-form .form-grid { gap:11px; }
   .schedule-banner { padding:15px; border-radius:16px; }
 }
+
+.choice-button.uncertain.selected { background:#fff3cf; border-color:#b77900; color:#785000; }
