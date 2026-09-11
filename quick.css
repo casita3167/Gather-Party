@@ -39,7 +39,7 @@
 .quick-day.selected { color:white; border-color:var(--primary); background:var(--primary); }
 .quick-day.selected.batch-target { box-shadow:inset 0 0 0 3px rgb(255 255 255 / .78); }
 .quick-day.committed { color:var(--ink); border-color:#cfcaf6; background:white; }
-.calendar-batch-number { position:absolute; top:4px; right:4px; width:21px; height:21px; display:grid; place-items:center; border-radius:50%; color:white; background:var(--primary); font-size:.68rem; font-weight:900; line-height:1; box-shadow:0 1px 4px rgb(32 36 54 / .18); }
+.calendar-batch-number { position:absolute; top:4px; right:4px; width:21px; height:21px; display:grid; place-items:center; border-radius:50%; color:white; background:#c2410c; font-size:.68rem; font-weight:900; line-height:1; box-shadow:0 1px 4px rgb(124 45 18 / .24); }
 .quick-day.outside { visibility:hidden; pointer-events:none; }
 .quick-day.holiday:not(.selected) { color:var(--red); background:#fff8f7; }
 .quick-day.today:not(.selected) { color:var(--primary); border:2px solid var(--primary); background:white; box-shadow:none; }
