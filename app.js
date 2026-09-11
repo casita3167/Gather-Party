@@ -56,7 +56,7 @@ function nav(active = "home") {
     ? '<a class="active" href="#admin">管理後台</a>'
     : "";
   return `<header class="topbar">
-    <a class="brand" href="#"><span class="brandmark" aria-hidden="true">⚄</span><span>Gather Party<small>${active === "admin" ? "團務管理" : "TRPG 快速約團"}</small></span></a>
+    <a class="brand" href="#"><span class="brandmark brandmark-image"><img src="./favicon.svg" alt="" aria-hidden="true"></span><span>Gather Party<small>${active === "admin" ? "團務管理" : "TRPG 快速約團"}</small></span></a>
     <nav><a href="./quick.html">快速約團</a>${adminLink}</nav>
   </header>`;
 }
@@ -79,7 +79,7 @@ function renderHome() {
   root.innerHTML = `<main class="shell">${nav("home")}
     <section class="portal-head"><span class="eyebrow">GATHER PARTY</span><h1>快速約團</h1><p>建立約團表，讓玩家從月曆填寫可跑日期與時段。</p></section>
     <section class="portal-grid single" aria-label="主要功能">
-      <a class="portal-card quick" href="./quick.html"><span class="portal-icon" aria-hidden="true">⚄</span><div><h2>建立或查看約團表</h2><p>建立新的快速約團，或回到這台裝置曾經建立的約團表。</p><b>前往快速約團 →</b></div></a>
+      <a class="portal-card quick" href="./quick.html"><span class="portal-icon portal-icon-image"><img src="./favicon.svg" alt="" aria-hidden="true"></span><div><h2>建立或查看約團表</h2><p>建立新的快速約團，或回到這台裝置曾經建立的約團表。</p><b>前往快速約團 →</b></div></a>
     </section>
   </main>`;
 }
@@ -96,7 +96,7 @@ async function getRole(account) {
 }
 
 function renderLogin(message = "") {
-  root.innerHTML = `<main class="shell narrow">${nav("admin")}<section class="login-card"><span class="brandmark">⚄</span><h1>團務管理登入</h1><p>你可以只是建立者或統計者，不必是這場團的實際 GM。</p><form id="login-form"><label>Email<input name="email" type="email" autocomplete="email" required></label><label>密碼<input name="password" type="password" autocomplete="current-password" required></label><p class="form-message">${escapeHtml(message)}</p><button class="button full" type="submit">登入管理後台</button></form><a href="#">← 回首頁</a></section></main>`;
+  root.innerHTML = `<main class="shell narrow">${nav("admin")}<section class="login-card"><span class="brandmark brandmark-image"><img src="./favicon.svg" alt="" aria-hidden="true"></span><h1>團務管理登入</h1><p>你可以只是建立者或統計者，不必是這場團的實際 GM。</p><form id="login-form"><label>Email<input name="email" type="email" autocomplete="email" required></label><label>密碼<input name="password" type="password" autocomplete="current-password" required></label><p class="form-message">${escapeHtml(message)}</p><button class="button full" type="submit">登入管理後台</button></form><a href="#">← 回首頁</a></section></main>`;
   document.querySelector("#login-form").addEventListener("submit", async e => {
     e.preventDefault();
     const button = e.currentTarget.querySelector("button");
