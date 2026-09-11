@@ -17,6 +17,8 @@ a { color:inherit; text-decoration:none; }
 .topbar { display:flex; align-items:center; justify-content:space-between; gap:24px; margin-bottom:34px; }
 .brand { display:flex; align-items:center; gap:11px; font-weight:900; letter-spacing:-.02em; }
 .brandmark { width:43px; height:43px; display:grid; place-items:center; flex:none; border-radius:13px; color:white; background:var(--primary); box-shadow:0 8px 22px rgb(84 70 214 / .25); font-size:1.5rem; }
+.brandmark-image { padding:0; overflow:hidden; background:transparent; }
+.brandmark-image img { width:100%; height:100%; display:block; }
 .brand small { display:block; margin-top:2px; color:var(--muted); font-size:.75rem; font-weight:650; letter-spacing:0; }
 nav { display:flex; align-items:center; gap:22px; color:var(--muted); font-size:.92rem; font-weight:750; }
 nav a { padding:8px 0; }
@@ -43,6 +45,8 @@ nav a:hover,nav a.active { color:var(--primary); }
 .portal-card { min-height:230px; display:flex; align-items:flex-start; gap:18px; padding:26px; border:1px solid var(--line); border-radius:24px; background:white; box-shadow:var(--shadow); transition:.18s ease; }
 .portal-card:hover { border-color:#c8c3f4; transform:translateY(-3px); box-shadow:0 18px 42px rgb(25 32 51 / .11); }
 .portal-icon { width:52px; height:52px; display:grid; place-items:center; flex:0 0 auto; border-radius:16px; color:white; background:var(--primary); font-size:1.6rem; font-weight:900; }
+.portal-icon-image { padding:0; overflow:hidden; background:transparent; }
+.portal-icon-image img { width:100%; height:100%; display:block; }
 .portal-card.admin .portal-icon { color:var(--primary); background:var(--primary-soft); }
 .portal-card h2 { margin:3px 0 8px; font-size:1.55rem; }
 .portal-card p { min-height:78px; margin:0 0 18px; color:var(--muted); line-height:1.65; }
