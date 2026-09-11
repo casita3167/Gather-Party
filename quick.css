@@ -63,7 +63,20 @@
 .contact-card b { margin-top:5px; overflow-wrap:anywhere; word-break:break-word; }
 .schedule-banner h1,.schedule-banner p { overflow-wrap:anywhere; }
 .schedule-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(320px,.7fr); gap:16px; align-items:start; }
-.choice-list { display:grid; gap:9px; }
+.batch-choice-panel { display:grid; gap:10px; margin:18px 0 10px; padding:13px; border:1px solid #d9d5f8; border-radius:14px; background:var(--primary-soft); }
+.batch-choice-panel h3 { margin:0; color:var(--ink); }
+.batch-choice-panel p { margin:3px 0 0; color:var(--muted); font-size:.8rem; }
+.batch-choice-actions { display:flex; flex-wrap:wrap; gap:7px; }
+.batch-choice-button { min-width:72px; flex:1 1 72px; }
+.batch-choice-button.clear { flex-basis:100px; color:var(--ink); background:white; }
+.batch-choice-button:disabled { opacity:.45; cursor:not-allowed; }
+.choice-details { margin:0 0 16px; border:1px solid var(--line); border-radius:14px; background:#fcfcfd; overflow:hidden; }
+.choice-details summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 13px; color:var(--ink); background:#f7f7fa; font-weight:850; cursor:pointer; list-style:none; }
+.choice-details summary::-webkit-details-marker { display:none; }
+.choice-details summary::after { content:"展開"; color:var(--primary); font-size:.78rem; }
+.choice-details[open] summary::after { content:"收合"; }
+.choice-details summary span { margin-left:auto; color:var(--muted); font-size:.78rem; }
+.choice-list { max-height:320px; display:grid; gap:9px; padding:10px; overflow:auto; overscroll-behavior:contain; }
 .period-legend { display:flex; flex-wrap:wrap; gap:7px; margin:0 0 16px; }
 .period-legend span { display:inline-flex; align-items:center; gap:6px; padding:7px 10px; border:1px solid #d9d5f8; border-radius:999px; color:#4c477b; background:var(--primary-soft); font-size:.8rem; }
 .period-legend b { color:var(--primary); }
@@ -126,6 +139,11 @@
   .calendar-player { width:17px; height:17px; font-size:.55rem; }
   .schedule-banner { display:block; padding:19px; }
   .contact-card { width:100%; min-width:0; margin-top:15px; }
+  .batch-choice-panel { padding:10px; }
+  .batch-choice-actions { display:grid; grid-template-columns:repeat(3,1fr); }
+  .batch-choice-button { min-width:0; }
+  .batch-choice-button.clear { grid-column:span 2; }
+  .choice-list { max-height:300px; }
   .choice-row { grid-template-columns:repeat(4,1fr); }
   .choice-date { grid-column:1/-1; }
   .choice-button { min-width:0; }
