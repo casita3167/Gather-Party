@@ -331,9 +331,37 @@ async function ensureShortLinks() {
   }
 }
 
+function responseUpdatedMillis(response) {
+  if (typeof response.updatedAt?.toMillis === "function") return response.updatedAt.toMillis();
+  return Number(response.updatedAt?.seconds || 0) * 1000;
+}
+
+function normalizedPlayerName(name = "") {
+  return String(name).trim().normalize("NFKC").toLocaleLowerCase("zh-Hant-TW");
+}
+
+function uniqueSubmittedResponses(items = []) {
+  const responsesByName = new Map();
+  for (const response of items.filter(item => item.submitted)) {
+    const nameKey = normalizedPlayerName(response.playerName) || `__response__${response.id}`;
+    const existing = responsesByName.get(nameKey);
+    if (!existing) {
+      responsesByName.set(nameKey, { ...response, responseIds: [response.id] });
+      continue;
+    }
+
+    const responseIds = [...new Set([...(existing.responseIds || [existing.id]), response.id])];
+    const latest = responseUpdatedMillis(response) >= responseUpdatedMillis(existing)
+      ? response
+      : existing;
+    responsesByName.set(nameKey, { ...latest, responseIds });
+  }
+  return [...responsesByName.values()];
+}
+
 function renderSchedule(mineData) {
   const periodRanges = schedule.periods || {};
-  const submitted = responses.filter(item => item.submitted);
+  const submitted = uniqueSubmittedResponses(responses);
   const best = bestSlots(submitted);
   const playerLink = schedule.shortPlayerUrl || quickUrl(schedule.id);
   const privateLink = managementToken ? (managementShortUrl || manageUrl(schedule.id, managementToken)) : "";
@@ -449,7 +477,7 @@ function bestMarkup(items, total) {
 }
 
 function refreshOverview() {
-  const submitted = responses.filter(item => item.submitted);
+  const submitted = uniqueSubmittedResponses(responses);
   const count = document.querySelector("#response-count");
   const best = document.querySelector("#best-slots");
   const overview = document.querySelector("#overview-content");
@@ -467,8 +495,8 @@ function refreshOverview() {
 }
 
 function calendarPlayersMarkup(date) {
-  const availablePlayers = responses.filter(player =>
-    player.submitted && PERIOD_KEYS.some(period => player.choices?.[date]?.includes(period))
+  const availablePlayers = uniqueSubmittedResponses(responses).filter(player =>
+    PERIOD_KEYS.some(period => player.choices?.[date]?.includes(period))
   );
   if (!availablePlayers.length) return "";
   const names = availablePlayers.map(player => player.playerName || "玩家");
@@ -837,9 +865,11 @@ function overviewMarkup(players) {
   if (!players.length) return '<div class="empty">目前還沒有人填寫。</div>';
   return `<div class="player-availability-grid">${players.map(player => {
     const groupedChoices = groupedPlayerChoices(player.choices, player.batchGroups);
-    const canDelete = player.id === user?.uid || canManageSchedule;
-    const deleteLabel = player.id === user?.uid ? "刪除我的填寫" : `刪除 ${player.playerName} 的登記`;
-    const deleteButton = canDelete ? `<button class="delete-my-response" type="button" data-response-id="${escapeHtml(player.id)}" data-player-name="${escapeHtml(player.playerName)}" aria-label="${escapeHtml(deleteLabel)}" title="${escapeHtml(deleteLabel)}">×</button>` : "";
+    const responseIds = player.responseIds || [player.id];
+    const isMine = responseIds.includes(user?.uid);
+    const canDelete = isMine || canManageSchedule;
+    const deleteLabel = isMine ? "刪除我的填寫" : `刪除 ${player.playerName} 的登記`;
+    const deleteButton = canDelete ? `<button class="delete-my-response" type="button" data-response-ids="${escapeHtml(responseIds.join(","))}" data-player-name="${escapeHtml(player.playerName)}" aria-label="${escapeHtml(deleteLabel)}" title="${escapeHtml(deleteLabel)}">×</button>` : "";
     return `<article class="player-availability"><header><h3>${escapeHtml(player.playerName)}</h3>${deleteButton}</header>${player.note ? `<p class="response-note">${escapeHtml(player.note)}</p>` : ""}<div>${groupedChoices.map(group => `<span class="player-date-choice"><b>${escapeHtml(compactDateRangeLabel(group.start, group.end))}</b><i class="choice-mark ${group.isUnavailable ? "no" : ""}">${escapeHtml(group.label)}</i></span>`).join("")}</div></article>`;
   }).join("")}</div>`;
 }
@@ -847,9 +877,12 @@ function overviewMarkup(players) {
 function bindOverviewActions() {
   document.querySelectorAll(".delete-my-response").forEach(button => button.addEventListener("click", async event => {
     const target = event.currentTarget;
-    const responseId = target.dataset.responseId;
-    const isMine = responseId === user?.uid;
-    if (!user || (!isMine && !canManageSchedule)) return;
+    const responseIds = (target.dataset.responseIds || "").split(",").filter(Boolean);
+    const isMine = responseIds.includes(user?.uid);
+    if (!user || !responseIds.length || (!isMine && !canManageSchedule)) return;
+    const deletableResponseIds = canManageSchedule
+      ? responseIds
+      : responseIds.filter(responseId => responseId === user.uid);
     const playerName = target.dataset.playerName || "這位玩家";
     const message = isMine
       ? "確定要刪除自己的填寫資料嗎？日期、時段與備註都會被移除。"
@@ -857,8 +890,10 @@ function bindOverviewActions() {
     if (!window.confirm(message)) return;
     target.disabled = true;
     try {
-      await deleteDoc(doc(db, "quickSchedules", schedule.id, "responses", responseId));
-      responses = responses.filter(player => player.id !== responseId);
+      await Promise.all(deletableResponseIds.map(responseId =>
+        deleteDoc(doc(db, "quickSchedules", schedule.id, "responses", responseId))
+      ));
+      responses = responses.filter(player => !deletableResponseIds.includes(player.id));
       if (isMine) {
         choices.clear();
         batchGroups.clear();
