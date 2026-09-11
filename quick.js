@@ -437,9 +437,14 @@ function periodLegendMarkup(ranges) {
   return `<div class="period-legend" aria-label="本團時段範圍">${PERIOD_KEYS.map(period => `<span><b>${period}</b>${escapeHtml(ranges[period] || defaults[period])}</span>`).join("")}</div>`;
 }
 
+function bestSlotPlayersMarkup(players = []) {
+  const names = players.map(player => player.playerName || "玩家");
+  return `<span class="best-slot-players" aria-label="可以的玩家：${escapeHtml(names.join("、"))}">${names.map(name => `<span class="best-slot-player" title="${escapeHtml(name)}">${escapeHtml(Array.from(name.trim())[0] || "玩")}</span>`).join("")}</span>`;
+}
+
 function bestMarkup(items, total) {
   return items.length
-    ? items.slice(0, 10).map(item => `<div class="best-slot"><span>${escapeHtml(dateLabel(item.date, true))}・${escapeHtml(item.period)}</span><small>${total > 0 && item.count === total ? "全員皆可・" : ""}${item.count}／${total} 人</small></div>`).join("")
+    ? items.slice(0, 10).map(item => `<div class="best-slot"><span class="best-slot-time">${escapeHtml(dateLabel(item.date, true))}・${escapeHtml(item.period)}</span><div class="best-slot-availability">${bestSlotPlayersMarkup(item.players)}<small>${item.count}／${total} 人</small></div></div>`).join("")
     : '<div class="empty small">等待更多玩家填寫。</div>';
 }
 
@@ -739,10 +744,15 @@ async function saveResponse(event) {
 
 function bestSlots(players) {
   const dates = [...new Set(players.flatMap(player => Object.keys(player.choices || {})))].sort();
-  const slots = dates.flatMap(date => PERIOD_KEYS.map(period => ({
-    date, period,
-    count: players.filter(player => player.choices?.[date]?.includes(period)).length
-  })));
+  const slots = dates.flatMap(date => PERIOD_KEYS.map(period => {
+    const availablePlayers = players.filter(player => player.choices?.[date]?.includes(period));
+    return {
+      date,
+      period,
+      count: availablePlayers.length,
+      players: availablePlayers
+    };
+  }));
   const enough = slots.filter(item => item.count >= Number(schedule.minPlayers || 1));
   return enough.sort((a, b) => b.count - a.count || a.date.localeCompare(b.date) || PERIOD_KEYS.indexOf(a.period) - PERIOD_KEYS.indexOf(b.period));
 }
