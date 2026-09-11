@@ -576,6 +576,8 @@ function applyMonthDatePreset(preset, ranges, refreshCalendar) {
     return;
   }
 
+  if (batchApplied) return toast("請先按「儲存時間」完成目前批次。");
+
   const dates = [];
   for (let day = 1; day <= total; day += 1) {
     const weekday = new Date(year, month, day).getDay();
