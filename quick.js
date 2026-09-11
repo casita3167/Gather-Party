@@ -51,7 +51,7 @@ function toast(message) {
 }
 
 function brand() {
-  return `<header class="quick-brand"><a class="quick-home" href="./#"><span class="brandmark">⚄</span><span>Gather Party<small>快速約團</small></span></a><a href="./#">← 回到團務首頁</a></header>`;
+  return `<header class="quick-brand"><a class="quick-home" href="./#"><span class="brandmark brandmark-image"><img src="./favicon.svg" alt="" aria-hidden="true"></span><span>Gather Party<small>快速約團</small></span></a><a href="./#">← 回到團務首頁</a></header>`;
 }
 
 function routeInfo() {
@@ -258,7 +258,7 @@ async function openSchedule(id, routeManagementToken = "") {
       toast("無法同步玩家資料。");
     });
   } catch (error) {
-    root.innerHTML = `<main class="error-screen"><span class="brandmark">⚄</span><h1>無法開啟約團表</h1><p>${escapeHtml(error.message)}</p><a class="button" href="./quick.html">建立新的約團表</a></main>`;
+    root.innerHTML = `<main class="error-screen"><span class="brandmark brandmark-image"><img src="./favicon.svg" alt="" aria-hidden="true"></span><h1>無法開啟約團表</h1><p>${escapeHtml(error.message)}</p><a class="button" href="./quick.html">建立新的約團表</a></main>`;
   }
 }
 

@@ -1,6 +1,8 @@
 .quick-shell { width:min(1080px,calc(100% - 36px)); margin:auto; padding:22px 0 44px; }
 .quick-brand { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:28px; }
 .quick-home { display:flex; align-items:center; gap:11px; font-weight:900; }
+.quick-home .brandmark-image { padding:0; overflow:hidden; background:transparent; }
+.quick-home .brandmark-image img { width:100%; height:100%; display:block; }
 .quick-home small { display:block; margin-top:2px; color:var(--muted); font-size:.75rem; }
 .quick-brand>a:last-child { color:var(--primary); font-weight:800; }
 .quick-head { margin-bottom:20px; }
