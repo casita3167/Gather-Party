@@ -48,15 +48,28 @@ const announced2026 = {
   "2026-12-27": "行憲紀念日連假"
 };
 
+// 2027 春節連假：行政院公告之 116 年政府行政機關辦公日曆表。
+const announced2027 = {
+  "2027-02-04": "小年夜",
+  "2027-02-05": "除夕",
+  "2027-02-06": "春節",
+  "2027-02-07": "初二",
+  "2027-02-08": "初三",
+  "2027-02-09": "春節補假",
+  "2027-02-10": "春節補假"
+};
+
+const announcedHolidays = { ...announced2026, ...announced2027 };
+
 export function holidayFor(date) {
-  if (announced2026[date]) return announced2026[date];
+  if (announcedHolidays[date]) return announcedHolidays[date];
   return fixedHolidays[date.slice(5)] || "";
 }
 
 export function holidaysInMonth(year, month) {
   const prefix = `${year}-${String(month).padStart(2, "0")}`;
   const dates = new Set([
-    ...Object.keys(announced2026).filter(date => date.startsWith(prefix)),
+    ...Object.keys(announcedHolidays).filter(date => date.startsWith(prefix)),
     ...Object.keys(fixedHolidays).map(day => `${year}-${day}`).filter(date => date.startsWith(prefix))
   ]);
   return [...dates].sort().map(date => ({ date, name: holidayFor(date) }));
