@@ -863,6 +863,7 @@ function compactDateRangeLabel(start, end) {
 
 function choiceLabel(values = []) {
   if (values.includes("△")) return "△ 不確定";
+  if (!values.includes("X") && PERIOD_KEYS.every(period => values.includes(period))) return "全天";
   return values.includes("X")
     ? "X"
     : PERIOD_KEYS.filter(period => values.includes(period)).join("／") || "未選時段";
