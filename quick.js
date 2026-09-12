@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/fireba
 import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import {
   addDoc, collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot,
-  query, serverTimestamp, setDoc, updateDoc, where
+  query, runTransaction, serverTimestamp, setDoc, updateDoc, where
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { holidayFor } from "./taiwan-holidays.js?v=20260912-1";
@@ -25,6 +25,7 @@ let batchGroups = new Map();
 let batchDates = new Set();
 let batchApplied = false;
 let unsubscribeResponses = null;
+let unsubscribeSchedule = null;
 let canManageSchedule = false;
 let managementToken = "";
 let managementShortUrl = "";
@@ -258,6 +259,13 @@ async function openSchedule(id, routeManagementToken = "") {
         }
         renderSchedule(latestMine);
         rendered = true;
+        unsubscribeSchedule = onSnapshot(doc(db, "quickSchedules", id), latest => {
+          if (!latest.exists() || schedule?.id !== id) return;
+          schedule.lockedDates = latest.data().lockedDates || {};
+          restoreLockedChoices();
+          refreshChoiceControls(schedule.periods || {});
+          refreshOverview();
+        }, error => { console.error(error); toast("無法同步日期鎖定，請重新整理。"); });
       } else {
         refreshOverview();
       }
@@ -421,7 +429,7 @@ function renderSchedule(mineData) {
     <section class="schedule-banner"><div><span class="eyebrow">QUICK SCHEDULER</span><h1>${escapeHtml(schedule.title)}</h1><p>建立者／統計者：${escapeHtml(schedule.coordinatorName)}${schedule.gmName ? `・實際 GM：${escapeHtml(schedule.gmName)}` : ""}</p></div>${schedule.contact ? `<div class="contact-card"><span>給玩家的聯絡方式</span><b>${escapeHtml(schedule.contact)}</b></div>` : ""}</section>
     ${schedule.note ? `<p class="quick-note">${escapeHtml(schedule.note)}</p>` : ""}
     <div class="schedule-grid"><form id="response-form" class="quick-card"><h2>填寫我的時間</h2><p>先從月曆點選你要填寫的日期，再選早上、下午、晚上、△ 不確定或 X。△ 表示當天可能有空、時段未定，不計入確定成團人數。儲存後仍可隨時回來修改日期。</p>${periodLegendMarkup(periodRanges)}<label>玩家名稱<input name="playerName" maxlength="30" value="${escapeHtml(mineData?.playerName || localStorage.getItem("gather-party-player") || "")}" required></label><div class="date-picker-head"><h3 id="response-month-title">${responseMonthCursor.getFullYear()} 年 ${responseMonthCursor.getMonth() + 1} 月</h3><div class="date-picker-nav"><button class="mini-button" id="response-prev" type="button">‹</button><button class="mini-button" id="response-today" type="button">今</button><button class="mini-button" id="response-next" type="button">›</button></div></div><div class="date-preset-bar" aria-label="快速選擇本月日期"><span>快速選日期</span><button class="date-preset-button" type="button" data-date-preset="weekdays">週一～週五</button><button class="date-preset-button" type="button" data-date-preset="weekends">週末</button><button class="date-preset-button" type="button" data-date-preset="all">全月</button><button class="date-preset-button clear" type="button" data-date-preset="clear">清除本月</button></div><div id="response-calendar">${responseCalendarMarkup()}</div><section class="batch-choice-panel"><div><h3>批次設定時段</h3><p id="batch-choice-count">目前批次 0 天</p><small>套用時段後按「儲存時間」，日期會收進編號批次；接著即可繼續選下一批。</small></div><div class="batch-choice-actions">${PERIOD_KEYS.map(period => `<button class="choice-button batch-choice-button" type="button" data-batch-choice="${period}">${period}</button>`).join("")}<button class="choice-button uncertain batch-choice-button" type="button" data-batch-choice="△" title="當天可能有空，時段尚未確定" aria-label="不確定">△</button><button class="choice-button no batch-choice-button" type="button" data-batch-choice="X">X</button><button class="choice-button clear batch-choice-button" type="button" data-batch-choice="clear">清除時段</button></div></section><details class="choice-details" id="choice-details" ${choices.size <= 3 ? "open" : ""}><summary>逐日調整 <span id="choice-summary-count">${choices.size} 天</span></summary><div class="choice-list" id="response-choice-list">${responseChoiceListMarkup(periodRanges)}</div></details><label>備註<textarea name="note" maxlength="500" placeholder="例如：晚上九點後才有空、這天可能需要再確認">${escapeHtml(mineData?.note || "")}</textarea></label><div class="quick-form-actions"><span class="muted">至少選擇一個日期，且每個日期都要選時段、△ 不確定或 X</span><button class="button" type="submit">儲存時間</button></div></form>
-      <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${submitted.length} 人已填寫・填表人數不限・${playerRangeLabel()}</p><div class="best-slots" id="best-slots">${bestMarkup(best, submitted.length)}</div><label>玩家填表連結<div class="share-box"><input id="player-link" readonly value="${escapeHtml(playerLink)}" aria-label="玩家填表短網址"><button class="button secondary" id="copy-quick" type="button">複製</button></div></label>${canManageSchedule ? `<div class="management-box"><h3>私人管理連結</h3><p>換裝置時用這條隨機短網址取回管理權限，請勿傳給玩家。</p>${privateLink ? `<div class="share-box"><input id="manager-link" readonly value="${escapeHtml(privateLink)}" aria-label="私人管理短網址"><button class="button secondary" id="copy-manager" type="button">複製</button></div>` : '<p class="muted">私人管理連結建立中。</p>'}<div class="management-actions"><button class="button secondary full" id="edit-current-schedule" type="button">編輯約團設定</button><button class="button reject full" id="delete-current-schedule" type="button">刪除這張約團表</button></div></div>` : ""}</aside>
+      <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${submitted.length} 人已填寫・填表人數不限・${playerRangeLabel()}</p><div class="best-slots" id="best-slots">${bestMarkup(best, submitted.length)}</div><label>玩家填表連結<div class="share-box"><input id="player-link" readonly value="${escapeHtml(playerLink)}" aria-label="玩家填表短網址"><button class="button secondary" id="copy-quick" type="button">複製</button></div></label>${canManageSchedule ? `<div class="management-box"><h3>私人管理連結</h3><p>換裝置時用這條隨機短網址取回管理權限，請勿傳給玩家。</p>${privateLink ? `<div class="share-box"><input id="manager-link" readonly value="${escapeHtml(privateLink)}" aria-label="私人管理短網址"><button class="button secondary" id="copy-manager" type="button">複製</button></div>` : '<p class="muted">私人管理連結建立中。</p>'}<div class="management-actions"><button class="button secondary full" id="lock-schedule-dates" type="button">🔒 設定不開放日期</button><button class="button secondary full" id="edit-current-schedule" type="button">編輯約團設定</button><button class="button reject full" id="delete-current-schedule" type="button">刪除這張約團表</button></div></div>` : ""}</aside>
     </div>
     <section class="quick-card overview"><h2>玩家時間一覽</h2><p>每位玩家的選擇與備註會集中顯示在這裡。</p>${periodLegendMarkup(periodRanges)}<div id="overview-content">${overviewMarkup(submitted)}</div></section>
   </main>`;
@@ -437,10 +445,89 @@ function renderSchedule(mineData) {
   document.querySelector("#copy-manager")?.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(privateLink); toast("已複製私人管理連結"); } catch { toast("請手動複製網址。"); }
   });
+  document.querySelector("#lock-schedule-dates")?.addEventListener("click", openLockedDatesDialog);
   document.querySelector("#edit-current-schedule")?.addEventListener("click", openEditScheduleDialog);
   document.querySelector("#delete-current-schedule")?.addEventListener("click", event => {
     deleteQuickSchedule(schedule.id, schedule.title, event.currentTarget);
   });
+}
+
+
+function isDateLocked(date) {
+  return Object.hasOwn(schedule?.lockedDates || {}, date);
+}
+
+function restoreLockedChoices() {
+  const saved = responses.find(item => item.id === user.uid)?.choices || {};
+  for (const date of Object.keys(schedule?.lockedDates || {})) {
+    batchDates.delete(date);
+    if (saved[date]) choices.set(date, new Set(saved[date]));
+    else { choices.delete(date); batchGroups.delete(date); }
+  }
+}
+
+function openLockedDatesDialog() {
+  if (!canManageSchedule || !routeInfo().token) return;
+  const id = schedule.id;
+  const dialog = document.createElement("dialog");
+  const selected = new Set();
+  let cursor = new Date(responseMonthCursor);
+  dialog.innerHTML = '<section class="dialog-card"><div class="dialog-head"><h2>不開放日期</h2><button type="button" class="icon-button" data-close aria-label="關閉">×</button></div><p>點選日期後批次鎖定或解除鎖定。鎖定期間保留原填寫紀錄，但不計入成團。</p><div class="date-picker-head"><button type="button" class="mini-button" data-prev>‹</button><h3 data-title></h3><button type="button" class="mini-button" data-next>›</button></div><div data-calendar></div><p data-count role="status"></p><div class="dialog-actions"><button type="button" class="button secondary" data-unlock>解除鎖定</button><button type="button" class="button" data-lock>鎖定日期</button></div></section>';
+  document.body.append(dialog);
+  dialog.addEventListener("close", () => dialog.remove());
+  dialog.querySelector("[data-close]").onclick = () => dialog.close();
+  const draw = () => {
+    const y = cursor.getFullYear(), m = cursor.getMonth();
+    dialog.querySelector("[data-title]").textContent = y + " 年 " + (m + 1) + " 月";
+    let html = ["一","二","三","四","五","六","日"].map(day => '<div class="quick-weekday">' + day + '</div>').join("");
+    for (let i=0; i<(new Date(y,m,1).getDay()+6)%7; i++) html += '<div></div>';
+    for (let d=1; d<=new Date(y,m+1,0).getDate(); d++) {
+      const date = y + "-" + String(m+1).padStart(2,"0") + "-" + String(d).padStart(2,"0");
+      html += '<button type="button" class="quick-day ' + (selected.has(date) ? 'selected' : isDateLocked(date) ? 'locked' : '') + '" data-date="' + date + '" aria-pressed="' + selected.has(date) + '"><span>' + d + '</span>' + (isDateLocked(date) ? '<small>🔒 不開放</small>' : '') + '</button>';
+    }
+    dialog.querySelector("[data-calendar]").innerHTML = '<div class="quick-calendar">' + html + '</div>';
+    dialog.querySelector("[data-count]").textContent = "已選 " + selected.size + " 天";
+    dialog.querySelectorAll("[data-date]").forEach(button => button.onclick = () => {
+      const date = button.dataset.date;
+      selected.has(date) ? selected.delete(date) : selected.add(date);
+      draw();
+    });
+  };
+  dialog.querySelector("[data-prev]").onclick = () => { cursor = new Date(cursor.getFullYear(),cursor.getMonth()-1,1); draw(); };
+  dialog.querySelector("[data-next]").onclick = () => { cursor = new Date(cursor.getFullYear(),cursor.getMonth()+1,1); draw(); };
+  const save = async lock => {
+    if (!selected.size) return toast("請先選擇日期。");
+    if (!canManageSchedule || routeInfo().id !== id || !routeInfo().token) return dialog.close();
+    const dates = [...selected];
+    dialog.querySelectorAll("button").forEach(button => button.disabled = true);
+    try {
+      const lockedDates = await runTransaction(db, async transaction => {
+        const ref = doc(db, "quickSchedules", id);
+        const snap = await transaction.get(ref);
+        if (!snap.exists()) throw new Error("約團表不存在");
+        const next = { ...(snap.data().lockedDates || {}) };
+        dates.forEach(date => { if (lock) next[date] = true; else delete next[date]; });
+        transaction.update(ref, { lockedDates: next });
+        return next;
+      });
+      if (schedule?.id === id) {
+        schedule.lockedDates = lockedDates;
+        restoreLockedChoices();
+        refreshChoiceControls(schedule.periods || {});
+        refreshOverview();
+      }
+      toast(lock ? "已鎖定日期" : "已解除鎖定");
+      dialog.close();
+    } catch (error) {
+      console.error(error);
+      toast("日期設定儲存失敗，請確認管理權限。");
+      dialog.querySelectorAll("button").forEach(button => button.disabled = false);
+    }
+  };
+  dialog.querySelector("[data-lock]").onclick = () => save(true);
+  dialog.querySelector("[data-unlock]").onclick = () => save(false);
+  draw();
+  dialog.showModal();
 }
 
 function openEditScheduleDialog() {
@@ -577,11 +664,11 @@ function responseCalendarMarkup() {
     const chosen = choices.has(date);
     const inBatch = batchDates.has(date);
     const batchNumber = batchGroups.get(date);
-    const dayNote = holiday || (date === today ? "今天" : "");
+    const dayNote = isDateLocked(date) ? "🔒 不開放" : holiday || (date === today ? "今天" : "");
     const title = inBatch
       ? `目前選取・${dayNote || date}`
       : batchNumber ? `第 ${batchNumber} 批・${dayNote || date}` : dayNote || date;
-    cells.push(`<button class="quick-day ${inBatch ? "selected batch-target" : ""} ${chosen && !inBatch ? "committed" : ""} ${holiday ? "holiday" : ""} ${date === today ? "today" : ""}" type="button" data-response-date="${date}" title="${escapeHtml(title)}" aria-pressed="${chosen}"><span>${day}</span>${batchNumber && !inBatch ? `<span class="calendar-batch-number" aria-label="第 ${batchNumber} 批">${batchNumber}</span>` : ""}${calendarPlayersMarkup(date)}${dayNote ? `<small>${escapeHtml(dayNote)}</small>` : ""}</button>`);
+    cells.push(`<button class="quick-day ${isDateLocked(date) ? "locked" : ""} ${inBatch ? "selected batch-target" : ""} ${chosen && !inBatch ? "committed" : ""} ${holiday ? "holiday" : ""} ${date === today ? "today" : ""}" type="button" data-response-date="${date}" ${isDateLocked(date) ? "disabled" : ""} title="${escapeHtml(title)}" aria-pressed="${chosen}"><span>${day}</span>${batchNumber && !inBatch ? `<span class="calendar-batch-number" aria-label="第 ${batchNumber} 批">${batchNumber}</span>` : ""}${calendarPlayersMarkup(date)}${dayNote ? `<small>${escapeHtml(dayNote)}</small>` : ""}</button>`);
   }
   return `<div class="quick-calendar"><div class="quick-weekday">一</div><div class="quick-weekday">二</div><div class="quick-weekday">三</div><div class="quick-weekday">四</div><div class="quick-weekday">五</div><div class="quick-weekday">六</div><div class="quick-weekday">日</div>${cells.join("")}</div>`;
 }
@@ -589,7 +676,7 @@ function responseCalendarMarkup() {
 function responseChoiceListMarkup(ranges) {
   const dates = [...choices.keys()].sort();
   return dates.length
-    ? dates.map(date => choiceRow(date, ranges)).join("")
+    ? dates.map(date => isDateLocked(date) ? `<div class="choice-row locked"><b>${escapeHtml(dateLabel(date))}</b><span>🔒 不開放（原紀錄保留）</span></div>` : choiceRow(date, ranges)).join("")
     : '<div class="empty small">請先在上方月曆點選日期。</div>';
 }
 
@@ -619,7 +706,7 @@ function applyBatchChoice(value, ranges) {
   const targetDates = [...batchDates];
   for (const date of targetDates) {
     const selected = choices.get(date);
-    if (!selected) continue;
+    if (!selected || isDateLocked(date)) continue;
     if (value === "clear") {
       selected.clear();
     } else if (value === "X" || value === "△") {
@@ -653,7 +740,7 @@ function applyMonthDatePreset(preset, ranges, refreshCalendar) {
 
   if (preset === "clear") {
     for (const date of [...choices.keys()]) {
-      if (date.startsWith(monthPrefix)) {
+      if (date.startsWith(monthPrefix) && !isDateLocked(date)) {
         choices.delete(date);
         batchGroups.delete(date);
       }
@@ -684,6 +771,7 @@ function applyMonthDatePreset(preset, ranges, refreshCalendar) {
   batchApplied = false;
   let skipped = 0;
   for (const date of dates) {
+    if (isDateLocked(date)) continue;
     if (!choices.has(date)) {
       if (choices.size >= 31) {
         skipped += 1;
@@ -732,6 +820,7 @@ function bindResponseCalendar(ranges) {
 function bindResponseDayButtons(ranges) {
   document.querySelectorAll(".quick-day[data-response-date]").forEach(button => button.onclick = () => {
     const date = button.dataset.responseDate;
+    if (isDateLocked(date)) return;
     if (choices.has(date)) {
       choices.delete(date);
       batchGroups.delete(date);
@@ -758,6 +847,7 @@ function choiceRow(date, ranges) {
 
 function bindChoiceButtons() {
   document.querySelectorAll(".choice-button[data-date]").forEach(button => button.onclick = () => {
+    if (isDateLocked(button.dataset.date)) return;
     const set = choices.get(button.dataset.date) || new Set();
     const value = button.dataset.choice;
     if (value === "X" || value === "△") {
@@ -785,6 +875,7 @@ function markResponseDirty() {
 
 async function saveResponse(event) {
   event.preventDefault();
+  restoreLockedChoices();
   if (!choices.size) return toast("請先從月曆選擇至少一個日期。");
   if ([...choices.values()].some(values => !values.size)) return toast("每個已選日期都要選擇早上、下午、晚上、△ 不確定或 X。");
   const form = event.currentTarget;
@@ -832,7 +923,7 @@ async function saveResponse(event) {
 }
 
 function bestSlots(players) {
-  const dates = [...new Set(players.flatMap(player => Object.keys(player.choices || {})))].sort();
+  const dates = [...new Set(players.flatMap(player => Object.keys(player.choices || {})))].filter(date => !isDateLocked(date)).sort();
   const slots = dates.flatMap(date => PERIOD_KEYS.map(period => {
     const availablePlayers = players.filter(player => player.choices?.[date]?.includes(period));
     return {
@@ -904,7 +995,7 @@ function groupedPlayerChoices(choiceObject = {}, savedGroups = {}) {
   const normalizedGroups = normalizeBatchGroups(choiceObject, savedGroups);
   for (const date of Object.keys(choiceObject).sort()) {
     const values = choiceObject[date] || [];
-    const label = choiceLabel(values);
+    const label = choiceLabel(values) + (isDateLocked(date) ? "・🔒 不開放" : "");
     const batchNumber = normalizedGroups.get(date);
     const previous = groups.at(-1);
     if (previous
@@ -980,6 +1071,8 @@ function bindOverviewActions() {
 }
 
 async function handleRoute() {
+  unsubscribeSchedule?.();
+  unsubscribeSchedule = null;
   const route = routeInfo();
   if (route.id) {
     canManageSchedule = false;
