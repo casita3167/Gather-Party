@@ -250,3 +250,24 @@ dialog::backdrop { background:rgb(16 24 40 / .55); backdrop-filter:blur(3px); }
   .calendar-event span { max-width:100%; }
 }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; animation-duration:.01ms!important; transition-duration:.01ms!important; } }
+
+/* 首頁右下角管理入口 */
+.site-admin-lock {
+  position:fixed;
+  right:max(12px, env(safe-area-inset-right));
+  bottom:max(12px, env(safe-area-inset-bottom));
+  width:44px;
+  height:44px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:#202334;
+  opacity:.2;
+  z-index:20;
+  border-radius:10px;
+}
+.site-admin-lock:focus-visible {
+  opacity:1;
+  outline:2px solid currentColor;
+  outline-offset:2px;
+}
