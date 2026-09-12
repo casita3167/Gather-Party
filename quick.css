@@ -188,3 +188,10 @@
 }
 
 .choice-button.uncertain.selected { background:#fff3cf; border-color:#b77900; color:#785000; }
+
+.quick-day.locked, .quick-day.locked.holiday, .quick-day.locked.today {
+  background:#e9ebef; color:#727888; border-color:#cdd1da; box-shadow:none;
+}
+.quick-day.locked > span:first-child, .quick-day.locked small { color:#727888; }
+.quick-day.locked:disabled { cursor:not-allowed; opacity:1; }
+.choice-row.locked { background:#e9ebef; color:#727888; grid-template-columns:1fr 1fr; }
