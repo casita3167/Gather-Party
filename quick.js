@@ -20,6 +20,7 @@ let user;
 let responseMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let schedule = null;
 let draftLockedDates = new Set();
+const shownMergeConfirmations = new Set();
 let responses = [];
 let choices = new Map();
 let batchGroups = new Map();
@@ -291,6 +292,7 @@ async function openSchedule(id, routeManagementToken = "") {
         }
         renderSchedule(latestMine);
         rendered = true;
+        requestAnimationFrame(maybeOpenMergeConfirmDialog);
         unsubscribeSchedule = onSnapshot(doc(db, "quickSchedules", id), latest => {
           if (!latest.exists() || schedule?.id !== id) return;
           schedule.lockedDates = latest.data().lockedDates || {};
@@ -429,15 +431,26 @@ function uniqueSubmittedResponses(items = []) {
     const latest = [...group].sort((a, b) =>
       responseUpdatedMillis(b) - responseUpdatedMillis(a)
     )[0];
-    const choices = mergedResponseChoices(group);
-    const notes = [...new Set(group.map(response => response.note?.trim()).filter(Boolean))];
+    const responseIds = group.map(response => response.id);
+    const reconciled = [...group]
+      .sort((a, b) => responseUpdatedMillis(b) - responseUpdatedMillis(a))
+      .find(response => Array.isArray(response.reconciledResponseIds)
+        && responseIds.every(id => response.reconciledResponseIds.includes(id)));
+    const source = reconciled || latest;
+    const choices = reconciled ? (reconciled.choices || {}) : mergedResponseChoices(group);
+    const notes = reconciled
+      ? [reconciled.note?.trim()].filter(Boolean)
+      : [...new Set(group.map(response => response.note?.trim()).filter(Boolean))];
     return {
-      ...latest,
+      ...source,
       choices,
-      batchGroups: Object.fromEntries(normalizeBatchGroups(choices)),
+      batchGroups: reconciled
+        ? (reconciled.batchGroups || Object.fromEntries(normalizeBatchGroups(choices)))
+        : Object.fromEntries(normalizeBatchGroups(choices)),
       note: notes.join("／"),
-      responseIds: group.map(response => response.id),
-      mergedCount: group.length
+      responseIds,
+      mergedCount: group.length,
+      needsReconciliation: group.length > 1 && !reconciled
     };
   });
 }
@@ -1048,6 +1061,102 @@ function groupedPlayerChoices(choiceObject = {}, savedGroups = {}) {
   return groups;
 }
 
+
+function maybeOpenMergeConfirmDialog() {
+  if (document.querySelector("#merge-confirm-dialog")) return;
+  const player = uniqueSubmittedResponses(responses).find(item =>
+    item.needsReconciliation && item.responseIds?.includes(user?.uid)
+  );
+  if (!player) return;
+  const key = player.responseIds.slice().sort().join(",");
+  if (shownMergeConfirmations.has(key)) return;
+  shownMergeConfirmations.add(key);
+  openMergeConfirmDialog(player);
+}
+
+function mergeConfirmChoiceButtons(date, selected, locked = false) {
+  const disabled = locked ? " disabled" : "";
+  return [
+    ...PERIOD_KEYS.map(period => `<button class="choice-button ${selected.has(period) ? "selected" : ""}" type="button" data-merge-date="${date}" data-merge-choice="${period}" aria-pressed="${selected.has(period)}"${disabled}>${period}</button>`),
+    `<button class="choice-button uncertain ${selected.has("△") ? "selected" : ""}" type="button" data-merge-date="${date}" data-merge-choice="△" aria-pressed="${selected.has("△")}"${disabled}>△</button>`,
+    `<button class="choice-button no ${selected.has("X") ? "selected" : ""}" type="button" data-merge-date="${date}" data-merge-choice="X" aria-pressed="${selected.has("X")}"${disabled}>X</button>`
+  ].join("");
+}
+
+function openMergeConfirmDialog(player) {
+  if (!player?.responseIds?.includes(user?.uid)) return;
+  document.querySelector("#merge-confirm-dialog")?.remove();
+  const state = new Map(Object.entries(player.choices || {}).map(([date, values]) => [date, new Set(values)]));
+  const ownResponse = responses.find(item => item.id === user.uid);
+  const ownChoices = ownResponse?.choices || {};
+  lockedDateSet().forEach(date => {
+    if (ownChoices[date]) state.set(date, new Set(ownChoices[date]));
+    else state.delete(date);
+  });
+  const dialog = document.createElement("dialog");
+  dialog.id = "merge-confirm-dialog";
+  dialog.innerHTML = `<form method="dialog" class="dialog-card merge-confirm-card"><div class="dialog-head"><div><span class="eyebrow">確認同名填寫</span><h2>${escapeHtml(player.playerName)}的時間</h2></div><button class="icon-button" type="button" data-close aria-label="稍後確認">×</button></div><p>系統找到 ${player.mergedCount} 筆同名紀錄。請逐日確認早上、下午、晚上、△ 不確定或 X 無法，再儲存為正式內容。</p><div class="merge-confirm-list"></div><label>備註<textarea name="note" maxlength="500">${escapeHtml(player.note || "")}</textarea></label><div class="dialog-actions"><button class="button secondary" type="button" data-close>稍後確認</button><button class="button" type="submit">確認並儲存</button></div></form>`;
+  document.body.append(dialog);
+  const list = dialog.querySelector(".merge-confirm-list");
+  const draw = () => {
+    list.innerHTML = [...state.keys()].sort().map(date => {
+      const selected = state.get(date) || new Set();
+      const locked = isDateLocked(date);
+      return `<div class="merge-confirm-row"><div><b>${escapeHtml(dateLabel(date))}</b>${locked ? "<small>🔒 不開放，保留原紀錄</small>" : ""}</div><div class="merge-confirm-choices">${mergeConfirmChoiceButtons(date, selected, locked)}</div></div>`;
+    }).join("");
+    dialog.querySelectorAll("[data-merge-choice]").forEach(button => button.onclick = () => {
+      const selected = state.get(button.dataset.mergeDate) || new Set();
+      const value = button.dataset.mergeChoice;
+      if (value === "X" || value === "△") {
+        const wasSelected = selected.has(value);
+        selected.clear();
+        if (!wasSelected) selected.add(value);
+      } else {
+        selected.delete("X");
+        selected.delete("△");
+        selected.has(value) ? selected.delete(value) : selected.add(value);
+      }
+      state.set(button.dataset.mergeDate, selected);
+      draw();
+    });
+  };
+  dialog.querySelectorAll("[data-close]").forEach(button => button.onclick = () => dialog.close());
+  dialog.addEventListener("close", () => dialog.remove());
+  dialog.querySelector("form").onsubmit = async event => {
+    event.preventDefault();
+    if ([...state.values()].some(values => !values.size)) return toast("每個日期都要選擇時段、△ 不確定或 X。");
+    const button = event.currentTarget.querySelector('button[type="submit"]');
+    button.disabled = true;
+    const choiceObject = Object.fromEntries([...state.entries()].sort(([a],[b]) => a.localeCompare(b)).map(([date, values]) => [date, [
+      ...PERIOD_KEYS.filter(period => values.has(period)),
+      ...(values.has("△") ? ["△"] : []),
+      ...(values.has("X") ? ["X"] : [])
+    ]]));
+    try {
+      await setDoc(doc(db, "quickSchedules", schedule.id, "responses", user.uid), {
+        playerName: player.playerName,
+        note: event.currentTarget.note.value.trim(),
+        choices: choiceObject,
+        batchGroups: Object.fromEntries(normalizeBatchGroups(choiceObject)),
+        reconciledResponseIds: player.responseIds,
+        reconciledAt: serverTimestamp(),
+        submitted: true,
+        updatedAt: serverTimestamp()
+      });
+      choices = new Map(Object.entries(choiceObject).map(([date, values]) => [date, new Set(values)]));
+      batchGroups = normalizeBatchGroups(choiceObject);
+      toast("同名填寫已確認並整理完成");
+      dialog.close();
+    } catch (error) {
+      console.error(error);
+      toast("合併內容儲存失敗，請稍後再試。");
+      button.disabled = false;
+    }
+  };
+  draw();
+  dialog.showModal();
+}
+
 function overviewMarkup(players) {
   if (!players.length) return '<div class="empty">目前還沒有人填寫。</div>';
   return `<div class="player-availability-grid">${players.map(player => {
@@ -1057,14 +1166,22 @@ function overviewMarkup(players) {
     const canDelete = isMine || canManageSchedule;
     const deleteLabel = isMine ? "刪除我的填寫" : `刪除 ${player.playerName} 的登記`;
     const deleteButton = canDelete ? `<button class="delete-my-response" type="button" data-response-ids="${escapeHtml(responseIds.join(","))}" data-player-name="${escapeHtml(player.playerName)}" aria-label="${escapeHtml(deleteLabel)}" title="${escapeHtml(deleteLabel)}">×</button>` : "";
-    const mergeNotice = player.mergedCount > 1
-      ? `<p class="response-note">已將 ${player.mergedCount} 筆同名填寫合併整理。請確認下方日期與時段是否正確；若不正確，請由管理者刪除後再重新填寫。</p>`
+    const mergeNotice = player.needsReconciliation
+      ? `<div class="merge-review-notice"><p>已整理 ${player.mergedCount} 筆同名填寫，請確認日期與時段。</p>${isMine ? `<button class="button secondary review-merged-response" type="button" data-player-key="${escapeHtml(normalizedPlayerName(player.playerName))}">確認合併內容</button>` : ""}</div>`
       : "";
     return `<article class="player-availability"><header><h3>${escapeHtml(player.playerName)}</h3>${deleteButton}</header>${mergeNotice}${player.note ? `<p class="response-note">${escapeHtml(player.note)}</p>` : ""}<div>${groupedChoices.map(group => `<span class="player-date-choice"><b>${escapeHtml(compactDateRangeLabel(group.start, group.end))}</b><i class="choice-mark ${group.isUnavailable ? "no" : ""}">${escapeHtml(group.label)}</i></span>`).join("")}</div></article>`;
   }).join("")}</div>`;
 }
 
 function bindOverviewActions() {
+  document.querySelectorAll(".review-merged-response").forEach(button => button.addEventListener("click", () => {
+    const player = uniqueSubmittedResponses(responses).find(item =>
+      item.needsReconciliation
+      && item.responseIds?.includes(user?.uid)
+      && normalizedPlayerName(item.playerName) === button.dataset.playerKey
+    );
+    if (player) openMergeConfirmDialog(player);
+  }));
   document.querySelectorAll(".delete-my-response").forEach(button => button.addEventListener("click", async event => {
     const target = event.currentTarget;
     const responseIds = (target.dataset.responseIds || "").split(",").filter(Boolean);
