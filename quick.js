@@ -19,6 +19,7 @@ let db;
 let user;
 let responseMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let schedule = null;
+let draftLockedDates = new Set();
 let responses = [];
 let choices = new Map();
 let batchGroups = new Map();
@@ -98,6 +99,7 @@ function dateLabel(date, short = false) {
 }
 
 function renderCreate() {
+  draftLockedDates = new Set();
   root.innerHTML = `<main class="quick-shell">${brand()}
     <section class="quick-head"><span class="eyebrow">QUICK SCHEDULER</span><h1>一眼找出能跑團的時間。</h1><p>建立者可以只是負責統計的人，不必是實際 GM。選好候選日期與早、中、晚的範圍，再把連結交給玩家即可。</p></section>
     <section class="quick-card my-schedules"><div class="my-schedules-head"><h2>我的快速約團表</h2><p>這台裝置建立的約團表會保留在這裡，不需要 GM 權限。</p></div><div id="my-schedules-list" class="my-schedules-list"><span class="muted">正在讀取⋯</span></div></section>
@@ -110,12 +112,41 @@ function renderCreate() {
         <div class="form-grid"><label>最低成團人數<input name="minPlayers" type="number" min="1" max="20" value="4" required></label><label>最多參加人數（選填）<input name="maxPlayers" type="number" min="1" max="20" value="6" placeholder="不設上限"></label></div><small class="muted">同一天、同一時段達到最低人數即可成團；超過參加上限仍保留時段，由團務管理者協調名單。</small>
         <h3>時段範圍</h3><div class="period-settings"><label class="period-setting"><span>早上</span><input name="morning" value="09:00～12:00" required></label><label class="period-setting"><span>下午</span><input name="afternoon" value="13:00～18:00" required></label><label class="period-setting"><span>晚上</span><input name="evening" value="20:30～24:00" required></label></div>
         <p class="quick-note">玩家只會看到「早上／下午／晚上／△ 不確定／X」五個按鈕；滑鼠移到時段上即可查看你設定的範圍。</p>
+        <section aria-label="不開放日期"><h3>不開放日期（選填）</h3><p>點選要鎖定的日期，再點一次即可取消。建立後，只能透過私人管理連結修改。</p><div class="date-picker-head"><h3 id="draft-lock-month"></h3><div class="date-picker-nav"><button type="button" class="mini-button" id="draft-lock-prev" aria-label="上個月">‹</button><button type="button" class="mini-button" id="draft-lock-next" aria-label="下個月">›</button></div></div><div id="draft-lock-calendar"></div><p id="draft-lock-count" role="status"></p></section>
         <button class="button full" type="submit">建立快速約團表</button>
       </section>
     </form>
   </main>`;
   document.querySelector("#create-quick").addEventListener("submit", createSchedule);
+  bindDraftLockedDates();
   loadMySchedules();
+}
+
+
+function bindDraftLockedDates() {
+  const today = taiwanTodayKey();
+  let cursor = new Date(Number(today.slice(0,4)), Number(today.slice(5,7))-1, 1);
+  const draw = () => {
+    const y = cursor.getFullYear(), m = cursor.getMonth();
+    document.querySelector("#draft-lock-month").textContent = y + " 年 " + (m+1) + " 月";
+    let html = ["一","二","三","四","五","六","日"].map(day => '<div class="quick-weekday">' + day + '</div>').join("");
+    for (let i=0; i<(new Date(y,m,1).getDay()+6)%7; i++) html += '<div></div>';
+    for (let d=1; d<=new Date(y,m+1,0).getDate(); d++) {
+      const date = y + "-" + String(m+1).padStart(2,"0") + "-" + String(d).padStart(2,"0");
+      const locked = draftLockedDates.has(date), holiday = holidayFor(date);
+      html += '<button type="button" class="quick-day ' + (locked ? 'locked' : holiday ? 'holiday' : '') + '" data-draft-lock="' + date + '" aria-label="' + date + (locked ? ' 已鎖定，點擊取消' : ' 點擊鎖定') + '" aria-pressed="' + locked + '"><span>' + d + '</span>' + (locked ? '<small>🔒 不開放</small>' : holiday ? '<small>' + escapeHtml(holiday) + '</small>' : '') + '</button>';
+    }
+    document.querySelector("#draft-lock-calendar").innerHTML = '<div class="quick-calendar">' + html + '</div>';
+    document.querySelector("#draft-lock-count").textContent = "已設定 " + draftLockedDates.size + " 天不開放";
+    document.querySelectorAll("[data-draft-lock]").forEach(button => button.onclick = () => {
+      const date = button.dataset.draftLock;
+      draftLockedDates.has(date) ? draftLockedDates.delete(date) : draftLockedDates.add(date);
+      draw();
+    });
+  };
+  document.querySelector("#draft-lock-prev").onclick = () => { cursor = new Date(cursor.getFullYear(),cursor.getMonth()-1,1); draw(); };
+  document.querySelector("#draft-lock-next").onclick = () => { cursor = new Date(cursor.getFullYear(),cursor.getMonth()+1,1); draw(); };
+  draw();
 }
 
 async function loadMySchedules() {
@@ -188,6 +219,7 @@ async function createSchedule(event) {
       minPlayers,
       maxPlayers: maxPlayers || null,
       dates: [],
+      lockedDates: Object.fromEntries([...draftLockedDates].map(date => [date, true])),
       periods: {
         "早上": form.morning.value.trim(),
         "下午": form.afternoon.value.trim(),
