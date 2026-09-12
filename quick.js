@@ -302,6 +302,7 @@ async function openSchedule(id, routeManagementToken = "") {
         }, error => { console.error(error); toast("無法同步日期鎖定，請重新整理。"); });
       } else {
         refreshOverview();
+        requestAnimationFrame(maybeOpenMergeConfirmDialog);
       }
     }, error => {
       console.error(error);
@@ -1068,10 +1069,10 @@ function maybeOpenMergeConfirmDialog() {
     item.needsReconciliation && item.responseIds?.includes(user?.uid)
   );
   if (!player) return;
-  const key = player.responseIds.slice().sort().join(",");
+  const key = `${schedule.id}:${player.responseIds.slice().sort().join(",")}`;
   if (shownMergeConfirmations.has(key)) return;
-  shownMergeConfirmations.add(key);
   openMergeConfirmDialog(player);
+  shownMergeConfirmations.add(key);
 }
 
 function mergeConfirmChoiceButtons(date, selected, locked = false) {
@@ -1089,7 +1090,7 @@ function openMergeConfirmDialog(player) {
   const state = new Map(Object.entries(player.choices || {}).map(([date, values]) => [date, new Set(values)]));
   const ownResponse = responses.find(item => item.id === user.uid);
   const ownChoices = ownResponse?.choices || {};
-  lockedDateSet().forEach(date => {
+  Object.keys(schedule?.lockedDates || {}).forEach(date => {
     if (ownChoices[date]) state.set(date, new Set(ownChoices[date]));
     else state.delete(date);
   });
@@ -1145,6 +1146,9 @@ function openMergeConfirmDialog(player) {
       });
       choices = new Map(Object.entries(choiceObject).map(([date, values]) => [date, new Set(values)]));
       batchGroups = normalizeBatchGroups(choiceObject);
+      batchDates.clear();
+      batchApplied = false;
+      refreshChoiceControls(schedule.periods || {});
       toast("同名填寫已確認並整理完成");
       dialog.close();
     } catch (error) {
