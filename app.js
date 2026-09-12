@@ -27,6 +27,7 @@ let role = null;
 let adminEvents = [];
 let unsubscribeAdmin = null;
 let adminEventsLoaded = false;
+let adminView = null;
 
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
@@ -96,7 +97,7 @@ async function getRole(account) {
 }
 
 function renderLogin(message = "") {
-  root.innerHTML = `<main class="shell narrow">${nav("admin")}<section class="login-card"><span class="brandmark brandmark-image"><img src="./favicon.svg" alt="" aria-hidden="true"></span><h1>團務管理登入</h1><p>你可以只是建立者或統計者，不必是這場團的實際 GM。</p><form id="login-form"><label>Email<input name="email" type="email" autocomplete="email" required></label><label>密碼<input name="password" type="password" autocomplete="current-password" required></label><p class="form-message">${escapeHtml(message)}</p><button class="button full" type="submit">登入管理後台</button></form><a href="#">← 回首頁</a></section></main>`;
+  root.innerHTML = `<main class="shell narrow">${nav("admin")}<section class="login-card"><span class="brandmark brandmark-image"><img src="./favicon.svg" alt="" aria-hidden="true"></span><h1>管理後台登入</h1><p>使用 Firebase 建立的 Email 與密碼登入。站長帳號可查看、刪除全站快速約團表。</p><form id="login-form"><label>Email<input name="email" type="email" autocomplete="email" required></label><label>密碼<input name="password" type="password" autocomplete="current-password" required></label><p class="form-message">${escapeHtml(message)}</p><button class="button full" type="submit">登入管理後台</button></form><a href="#">← 回首頁</a></section></main>`;
   document.querySelector("#login-form").addEventListener("submit", async e => {
     e.preventDefault();
     const button = e.currentTarget.querySelector("button");
@@ -106,9 +107,10 @@ function renderLogin(message = "") {
       role = await getRole(credential.user);
       if (!role) {
         await signOut(auth);
-        return renderLogin("此帳號尚未被設定為 GM 或管理員。");
+        return renderLogin("此帳號尚未授權。請在 Firestore 的 admins 集合，以此帳號的 Firebase Authentication UID 建立管理員文件。");
       }
-      renderAdmin();
+      user = credential.user;
+      await handleRoute();
     } catch (error) {
       console.error(error);
       renderLogin("登入失敗，請確認 Email 與密碼。");
@@ -132,8 +134,9 @@ async function subscribeAdminEvents() {
 function renderAdmin() {
   if (!user || user.isAnonymous) return renderLogin();
   if (!role) return renderLogin("此帳號沒有管理權限。");
+  const selectedView = role.key === "admin" ? (adminView || "quickSchedules") : (adminView === "quickSchedules" ? "managedEvents" : adminView || "managedEvents");
   root.innerHTML = `<main class="shell">${nav("admin")}
-    <section class="admin-head"><div><span class="eyebrow">MANAGEMENT</span><h1>團務管理</h1><p>${escapeHtml(role.label)}・${escapeHtml(user.email || "")}</p></div><div><button class="button secondary" id="logout">登出</button><button class="button" id="new-event">＋ 開團</button></div></section>
+    <section class="admin-head"><div><span class="eyebrow">MANAGEMENT</span><h1>${role.key === "admin" ? "站長管理後台" : "團務管理"}</h1><p>${escapeHtml(role.label)}・${escapeHtml(user.email || "")}</p></div><div><button class="button secondary" id="logout">登出</button><button class="button" id="new-event">＋ 開團</button></div></section>
     <div class="admin-grid"><aside class="admin-nav"><button class="active" data-view="managedEvents">團務列表</button><button data-view="requests">加團申請</button><button data-view="polls">時間調查</button>${role.key === "admin" ? '<button data-view="quickSchedules">快速約團</button>' : ""}</aside><section id="admin-content" class="admin-content"></section></div>
     <dialog id="event-dialog"></dialog><dialog id="poll-dialog"></dialog>
   </main>`;
@@ -141,6 +144,8 @@ function renderAdmin() {
     unsubscribeAdmin?.();
     unsubscribeAdmin = null;
     adminEventsLoaded = false;
+    adminView = null;
+    role = null;
     await signOut(auth);
   };
   document.querySelector("#new-event").onclick = () => openEventDialog();
@@ -148,7 +153,8 @@ function renderAdmin() {
     document.querySelectorAll(".admin-nav button").forEach(item => item.classList.toggle("active", item === button));
     renderAdminView(button.dataset.view);
   });
-  renderAdminView("managedEvents");
+  document.querySelectorAll(".admin-nav button").forEach(button => button.classList.toggle("active", button.dataset.view === selectedView));
+  renderAdminView(selectedView);
   if (adminEventsLoaded) {
     const pendingDate = sessionStorage.getItem("gather-party-create-date");
     if (pendingDate) {
@@ -159,6 +165,7 @@ function renderAdmin() {
 }
 
 function renderAdminView(view) {
+  adminView = view;
   const panel = document.querySelector("#admin-content");
   if (!panel) return;
   if (view === "managedEvents") {
@@ -178,6 +185,7 @@ function renderAdminView(view) {
 }
 
 async function renderQuickScheduleAdmin() {
+  if (role?.key !== "admin" || !user || user.isAnonymous) return;
   const panel = document.querySelector("#admin-content");
   panel.innerHTML = '<div class="loading-inline"><div class="spinner"></div>正在讀取快速約團⋯</div>';
   try {
@@ -198,6 +206,7 @@ async function renderQuickScheduleAdmin() {
 }
 
 async function deleteQuickScheduleAdmin(schedule) {
+  if (role?.key !== "admin" || !user || user.isAnonymous) return toast("僅站長可以刪除全站約團表。");
   if (!schedule || !confirm(`確定刪除「${schedule.title}」？玩家填寫資料與私人管理權限也會一併刪除。`)) return;
   try {
     const [responses, tokens, managers] = await Promise.all([
