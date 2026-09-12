@@ -82,6 +82,7 @@ function renderHome() {
     <section class="portal-grid single" aria-label="主要功能">
       <a class="portal-card quick" href="./quick.html"><span class="portal-icon portal-icon-image"><img src="./favicon.svg" alt="" aria-hidden="true"></span><div><h2>建立或查看約團表</h2><p>建立新的快速約團，或回到這台裝置曾經建立的約團表。</p><b>前往快速約團 →</b></div></a>
     </section>
+    <a class="site-admin-lock" href="#admin" aria-label="管理後台"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14v3"/></svg></a>
   </main>`;
 }
 
@@ -97,7 +98,7 @@ async function getRole(account) {
 }
 
 function renderLogin(message = "") {
-  root.innerHTML = `<main class="shell narrow">${nav("admin")}<section class="login-card"><span class="brandmark brandmark-image"><img src="./favicon.svg" alt="" aria-hidden="true"></span><h1>管理後台登入</h1><p>使用 Firebase 建立的 Email 與密碼登入。站長帳號可查看、刪除全站快速約團表。</p><form id="login-form"><label>Email<input name="email" type="email" autocomplete="email" required></label><label>密碼<input name="password" type="password" autocomplete="current-password" required></label><p class="form-message">${escapeHtml(message)}</p><button class="button full" type="submit">登入管理後台</button></form><a href="#">← 回首頁</a></section></main>`;
+  root.innerHTML = `<main class="shell narrow">${nav("admin")}<section class="login-card"><span class="brandmark brandmark-image"><img src="./favicon.svg" alt="" aria-hidden="true"></span><h1>管理後台登入</h1><p>使用管理員帳號與密碼登入。</p><form id="login-form"><label>Email<input name="email" type="email" autocomplete="email" required></label><label>密碼<input name="password" type="password" autocomplete="current-password" required></label><p class="form-message">${escapeHtml(message)}</p><button class="button full" type="submit">登入管理後台</button></form><a href="#">← 回首頁</a></section></main>`;
   document.querySelector("#login-form").addEventListener("submit", async e => {
     e.preventDefault();
     const button = e.currentTarget.querySelector("button");
@@ -107,7 +108,7 @@ function renderLogin(message = "") {
       role = await getRole(credential.user);
       if (!role) {
         await signOut(auth);
-        return renderLogin("此帳號尚未授權。請在 Firestore 的 admins 集合，以此帳號的 Firebase Authentication UID 建立管理員文件。");
+        return renderLogin("此帳號沒有管理權限，請使用已授權的管理員帳號登入。");
       }
       user = credential.user;
       await handleRoute();
@@ -201,7 +202,7 @@ async function renderQuickScheduleAdmin() {
     });
   } catch (error) {
     showError(error, "無法讀取快速約團表。");
-    panel.innerHTML = '<div class="empty">無法讀取快速約團表，請確認新版 Firestore Rules 已發布。</div>';
+    panel.innerHTML = '<div class="empty">無法讀取快速約團表，請確認帳號權限或稍後重試。</div>';
   }
 }
 
@@ -543,5 +544,5 @@ async function start() {
 
 start().catch(error => {
   console.error(error);
-  root.innerHTML = '<main class="error-screen"><h1>網站初始化失敗</h1><p>請確認 Firebase 設定與網路連線。</p></main>';
+  root.innerHTML = '<main class="error-screen"><h1>網站初始化失敗</h1><p>請確認網路連線，並重新整理頁面。</p></main>';
 });
