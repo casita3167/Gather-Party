@@ -164,6 +164,16 @@ service cloud.firestore {
         || (isStaff() && resource.data.ownerUid == request.auth.uid);
     }
 
+    function lockedQuickDates(scheduleId) {
+      return get(/databases/$(database)/documents/quickSchedules/$(scheduleId)).data.get('lockedDates', {}).keys();
+    }
+
+    function preservesLockedQuickDates(scheduleId) {
+      return exists(/databases/$(database)/documents/quickSchedules/$(scheduleId)/responses/$(request.auth.uid))
+        ? !request.resource.data.choices.diff(resource.data.choices).affectedKeys().hasAny(lockedQuickDates(scheduleId))
+        : !request.resource.data.choices.keys().hasAny(lockedQuickDates(scheduleId));
+    }
+
     match /quickSchedules/{scheduleId} {
       allow get: if true;
       allow list: if isAdmin()
@@ -194,6 +204,7 @@ service cloud.firestore {
         allow read: if true;
         allow create, update: if signedIn()
           && request.auth.uid == userId
+          && preservesLockedQuickDates(scheduleId)
           && request.resource.data.playerName is string
           && request.resource.data.playerName.size() >= 1
           && request.resource.data.playerName.size() <= 30
