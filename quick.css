@@ -198,13 +198,46 @@
 
 .merge-review-notice { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px; margin:8px 0 12px; border:1px solid #d9d5f8; border-radius:12px; background:var(--primary-soft); }
 .merge-review-notice p { margin:0; }
-.merge-confirm-card { width:min(860px,calc(100vw - 28px)); max-height:min(86vh,820px); overflow:auto; }
-.merge-confirm-list { display:grid; gap:10px; margin:14px 0; }
-.merge-confirm-row { display:grid; grid-template-columns:minmax(180px,1fr) minmax(310px,auto); align-items:center; gap:12px; padding:12px; border:1px solid #dde0e8; border-radius:12px; background:#fff; }
+/* The dialog owns the viewport width; its form must never be wider. */
+#merge-confirm-dialog {
+  box-sizing:border-box;
+  width:min(860px,calc(100% - 24px));
+  max-width:calc(100% - 24px);
+  max-height:calc(100vh - 24px);
+  max-height:calc(100dvh - 24px);
+  margin:auto;
+  padding:0;
+  overflow:auto;
+}
+#merge-confirm-dialog .merge-confirm-card {
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  margin:0;
+  padding:clamp(12px,3vw,25px);
+  font-size:1rem;
+  line-height:1.6;
+  overflow-wrap:anywhere;
+}
+#merge-confirm-dialog .dialog-head > div { min-width:0; }
+#merge-confirm-dialog .dialog-head h2 { font-size:clamp(1.25rem,3vw,1.7rem); }
+#merge-confirm-dialog .icon-button { flex-shrink:0; }
+#merge-confirm-dialog textarea { box-sizing:border-box; width:100%; min-width:0; max-width:100%; font:inherit; }
+.merge-confirm-list { display:grid; gap:10px; margin:14px 0; min-width:0; }
+.merge-confirm-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,350px); align-items:center; gap:12px; padding:12px; border:1px solid #dde0e8; border-radius:12px; background:#fff; min-width:0; }
+.merge-confirm-row > div { min-width:0; }
 .merge-confirm-row small { display:block; margin-top:4px; color:#727888; }
-.merge-confirm-choices { display:grid; grid-template-columns:repeat(5,minmax(44px,64px)); gap:7px; }
+.merge-confirm-choices { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:7px; min-width:0; }
+#merge-confirm-dialog .choice-button { min-width:0; width:100%; min-height:44px; height:auto; padding:8px 4px; font-size:1rem; white-space:normal; }
+#merge-confirm-dialog .dialog-actions { flex-wrap:wrap; }
+#merge-confirm-dialog .dialog-actions .button { min-width:0; white-space:normal; overflow-wrap:anywhere; }
 @media (max-width:700px) {
   .merge-review-notice { align-items:stretch; flex-direction:column; }
-  .merge-confirm-row { grid-template-columns:1fr; }
-  .merge-confirm-choices { grid-template-columns:repeat(5,minmax(0,1fr)); }
+  .merge-confirm-row { grid-template-columns:minmax(0,1fr); }
+}
+@media (max-width:420px) {
+  #merge-confirm-dialog .dialog-actions .button { flex:1 1 100%; }
+  .merge-confirm-row { padding:8px; }
+  .merge-confirm-choices { gap:4px; }
 }
