@@ -266,6 +266,8 @@ async function openSchedule(id, routeManagementToken = "") {
   try {
     const snap = await getDoc(doc(db, "quickSchedules", id));
     if (!snap.exists()) throw new Error("找不到這張快速約團表。");
+    if (snap.data().retentionDeleting === true) throw new Error("這張約團表已逾期，正在清除。");
+    await updateDoc(doc(db, "quickSchedules", id), { lastOpenedAt: serverTimestamp() });
     schedule = { id: snap.id, ...snap.data() };
     await loadManagementAccess(routeManagementToken);
     await ensureShortLinks();
@@ -1313,6 +1315,8 @@ async function saveOpenResponse(data) {
   await runTransaction(db, async transaction => {
     const current = await transaction.get(doc(db, "quickSchedules", id));
     if (!current.exists() || current.data().closed === true) throw new Error("約團已結束，無法儲存");
+    if (current.data().retentionDeleting === true) throw new Error("約團表已逾期");
+    transaction.update(doc(db, "quickSchedules", id), { lastOpenedAt: serverTimestamp() });
     transaction.set(doc(db, "quickSchedules", id, "responses", user.uid), data);
   });
 }

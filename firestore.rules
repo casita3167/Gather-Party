@@ -174,11 +174,17 @@ service cloud.firestore {
         : !request.resource.data.choices.keys().hasAny(lockedQuickDates(scheduleId));
     }
 
+    function quickRetentionWritable(scheduleId) {
+      return exists(/databases/$(database)/documents/quickSchedules/$(scheduleId))
+        && get(/databases/$(database)/documents/quickSchedules/$(scheduleId)).data.get('retentionDeleting', false) == false;
+    }
+
     match /quickSchedules/{scheduleId} {
       allow get: if true;
       allow list: if isAdmin()
         || (signedIn() && resource.data.ownerUid == request.auth.uid);
       allow create: if signedIn()
+        && !request.resource.data.keys().hasAny(['retentionStartedAt', 'retentionDeleting', 'lastOpenedAt'])
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.title is string
         && request.resource.data.title.size() >= 1
@@ -198,11 +204,17 @@ service cloud.firestore {
         && request.resource.data.minPlayers is int
         && request.resource.data.minPlayers >= 1
         && request.resource.data.minPlayers <= 20;
-      allow update, delete: if managesQuickSchedule(scheduleId);
+      allow update: if quickRetentionWritable(scheduleId)
+        && ((signedIn()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastOpenedAt'])
+          && request.resource.data.lastOpenedAt == request.time)
+          || (managesQuickSchedule(scheduleId)
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['retentionStartedAt', 'retentionDeleting', 'lastOpenedAt'])));
+      allow delete: if quickRetentionWritable(scheduleId) && managesQuickSchedule(scheduleId);
 
       match /responses/{userId} {
         allow read: if true;
-        allow create, update: if signedIn()
+        allow create, update: if quickRetentionWritable(scheduleId) && signedIn()
           && request.auth.uid == userId
           && get(/databases/$(database)/documents/quickSchedules/$(scheduleId)).data.get('closed', false) == false
           && preservesLockedQuickDates(scheduleId)
@@ -213,7 +225,7 @@ service cloud.firestore {
           && request.resource.data.note.size() <= 500
           && request.resource.data.choices is map
           && request.resource.data.submitted == true;
-        allow delete: if signedIn()
+        allow delete: if quickRetentionWritable(scheduleId) && signedIn()
           && (managesQuickSchedule(scheduleId)
             || (request.auth.uid == userId
               && get(/databases/$(database)/documents/quickSchedules/$(scheduleId)).data.get('closed', false) == false));
@@ -221,12 +233,13 @@ service cloud.firestore {
 
       // 高熵隨機 token 只存在私人管理連結中；集合不可由一般使用者列出。
       match /managementTokens/{token} {
-        allow get, list, delete: if managesQuickSchedule(scheduleId);
-        allow create: if signedIn()
+        allow get, list: if managesQuickSchedule(scheduleId);
+        allow delete: if quickRetentionWritable(scheduleId) && managesQuickSchedule(scheduleId);
+        allow create: if quickRetentionWritable(scheduleId) && signedIn()
           && get(/databases/$(database)/documents/quickSchedules/$(scheduleId)).data.ownerUid == request.auth.uid
           && token.size() >= 24
           && token.size() <= 64;
-        allow update: if managesQuickSchedule(scheduleId)
+        allow update: if quickRetentionWritable(scheduleId) && managesQuickSchedule(scheduleId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shortUrl', 'shortTitle', 'previewVersion'])
           && request.resource.data.shortUrl is string
           && request.resource.data.shortUrl.size() <= 160
@@ -241,13 +254,14 @@ service cloud.firestore {
         allow get: if signedIn()
           && (request.auth.uid == managerId || managesQuickSchedule(scheduleId));
         allow list: if managesQuickSchedule(scheduleId);
-        allow create: if signedIn()
+        allow create: if quickRetentionWritable(scheduleId) && signedIn()
           && request.auth.uid == managerId
           && request.resource.data.token is string
           && request.resource.data.token.size() >= 24
           && request.resource.data.token.size() <= 64
           && exists(/databases/$(database)/documents/quickSchedules/$(scheduleId)/managementTokens/$(request.resource.data.token));
         allow delete: if signedIn()
+          && (!exists(/databases/$(database)/documents/quickSchedules/$(scheduleId)) || quickRetentionWritable(scheduleId))
           && (request.auth.uid == managerId || managesQuickSchedule(scheduleId));
       }
     }
