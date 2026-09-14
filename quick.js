@@ -295,6 +295,7 @@ async function openSchedule(id, routeManagementToken = "") {
         requestAnimationFrame(maybeOpenMergeConfirmDialog);
         unsubscribeSchedule = onSnapshot(doc(db, "quickSchedules", id), latest => {
           if (!latest.exists() || schedule?.id !== id) return;
+          schedule.closed = latest.data().closed === true;
           schedule.lockedDates = latest.data().lockedDates || {};
           restoreLockedChoices();
           refreshChoiceControls(schedule.periods || {});
@@ -474,17 +475,21 @@ function renderSchedule(mineData) {
     <a class="quick-back" href="./quick.html" aria-label="回到建立快速約團頁面">← 上一頁：建立快速約團</a>
     <section class="schedule-banner"><div><span class="eyebrow">QUICK SCHEDULER</span><h1>${escapeHtml(schedule.title)}</h1><p>建立者／統計者：${escapeHtml(schedule.coordinatorName)}${schedule.gmName ? `・實際 GM：${escapeHtml(schedule.gmName)}` : ""}</p></div>${schedule.contact ? `<div class="contact-card"><span>給玩家的聯絡方式</span><b>${escapeHtml(schedule.contact)}</b></div>` : ""}</section>
     ${schedule.note ? `<p class="quick-note">${escapeHtml(schedule.note)}</p>` : ""}
+    <p id="schedule-status" role="status"></p><div class="management-actions"><button class="button secondary" id="export-results" type="button">匯出約團結果</button>${canManageSchedule ? `<button class="button reject" id="close-schedule" type="button">結束約團</button>` : ""}</div>
     <div class="schedule-grid"><form id="response-form" class="quick-card"><h2>填寫我的時間</h2><p>先從月曆點選你要填寫的日期，再選早上、下午、晚上、△ 不確定或 X。△ 表示當天可能有空、時段未定，不計入確定成團人數。儲存後仍可隨時回來修改日期。</p>${periodLegendMarkup(periodRanges)}<label>玩家名稱<input name="playerName" maxlength="30" value="${escapeHtml(mineData?.playerName || localStorage.getItem("gather-party-player") || "")}" required></label><div class="date-picker-head"><h3 id="response-month-title">${responseMonthCursor.getFullYear()} 年 ${responseMonthCursor.getMonth() + 1} 月</h3><div class="date-picker-nav"><button class="mini-button" id="response-prev" type="button">‹</button><button class="mini-button" id="response-today" type="button">今</button><button class="mini-button" id="response-next" type="button">›</button></div></div><div class="date-preset-bar" aria-label="快速選擇本月日期"><span>快速選日期</span><button class="date-preset-button" type="button" data-date-preset="weekdays">週一～週五</button><button class="date-preset-button" type="button" data-date-preset="weekends">週末</button><button class="date-preset-button" type="button" data-date-preset="all">全月</button><button class="date-preset-button clear" type="button" data-date-preset="clear">清除本月</button></div><div id="response-calendar">${responseCalendarMarkup()}</div><section class="batch-choice-panel"><div><h3>批次設定時段</h3><p id="batch-choice-count">目前批次 0 天</p><small>套用時段後按「儲存時間」，日期會收進編號批次；接著即可繼續選下一批。</small></div><div class="batch-choice-actions">${PERIOD_KEYS.map(period => `<button class="choice-button batch-choice-button" type="button" data-batch-choice="${period}">${period}</button>`).join("")}<button class="choice-button uncertain batch-choice-button" type="button" data-batch-choice="△" title="當天可能有空，時段尚未確定" aria-label="不確定">△</button><button class="choice-button no batch-choice-button" type="button" data-batch-choice="X">X</button><button class="choice-button clear batch-choice-button" type="button" data-batch-choice="clear">清除時段</button></div></section><details class="choice-details" id="choice-details" ${choices.size <= 3 ? "open" : ""}><summary>逐日調整 <span id="choice-summary-count">${choices.size} 天</span></summary><div class="choice-list" id="response-choice-list">${responseChoiceListMarkup(periodRanges)}</div></details><label>備註<textarea name="note" maxlength="500" placeholder="例如：晚上九點後才有空、這天可能需要再確認">${escapeHtml(mineData?.note || "")}</textarea></label><div class="quick-form-actions"><span class="muted">至少選擇一個日期，且每個日期都要選時段、△ 不確定或 X</span><button class="button" type="submit">儲存時間</button></div></form>
       <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${submitted.length} 人已填寫・填表人數不限・${playerRangeLabel()}</p><div class="best-slots" id="best-slots">${bestMarkup(best, submitted.length)}</div><label>玩家填表連結<div class="share-box"><input id="player-link" readonly value="${escapeHtml(playerLink)}" aria-label="玩家填表短網址"><button class="button secondary" id="copy-quick" type="button">複製</button></div></label>${canManageSchedule ? `<div class="management-box"><h3>私人管理連結</h3><p>換裝置時用這條隨機短網址取回管理權限，請勿傳給玩家。</p>${privateLink ? `<div class="share-box"><input id="manager-link" readonly value="${escapeHtml(privateLink)}" aria-label="私人管理短網址"><button class="button secondary" id="copy-manager" type="button">複製</button></div>` : '<p class="muted">私人管理連結建立中。</p>'}<div class="management-actions"><button class="button secondary full" id="lock-schedule-dates" type="button">🔒 設定不開放日期</button><button class="button secondary full" id="edit-current-schedule" type="button">編輯約團設定</button><button class="button reject full" id="delete-current-schedule" type="button">刪除這張約團表</button></div></div>` : ""}</aside>
     </div>
     <section class="quick-card overview"><h2>玩家時間一覽</h2><p>每位玩家的選擇與備註會集中顯示在這裡。</p>${periodLegendMarkup(periodRanges)}<div id="overview-content">${overviewMarkup(submitted)}</div></section>
   </main>`;
+  document.querySelector("#export-results").onclick = exportScheduleResults;
+  document.querySelector("#close-schedule")?.addEventListener("click", closeSchedule);
   bindChoiceControls(periodRanges);
   bindResponseCalendar(periodRanges);
   bindOverviewActions();
   const responseForm = document.querySelector("#response-form");
   responseForm.onsubmit = saveResponse;
   responseForm.addEventListener("input", markResponseDirty);
+  applyClosedState();
   document.querySelector("#copy-quick").onclick = async () => {
     try { await navigator.clipboard.writeText(playerLink); toast("已複製玩家填表連結"); } catch { toast("請手動複製網址。"); }
   };
@@ -684,6 +689,7 @@ function refreshOverview() {
     calendar.innerHTML = responseCalendarMarkup();
     bindResponseDayButtons(schedule.periods || {});
   }
+  applyClosedState();
 }
 
 function calendarPlayersMarkup(date) {
@@ -921,6 +927,7 @@ function markResponseDirty() {
 
 async function saveResponse(event) {
   event.preventDefault();
+  if (schedule?.closed) return toast("此約團已結束，無法修改填表。");
   restoreLockedChoices();
   if (!choices.size) return toast("請先從月曆選擇至少一個日期。");
   if ([...choices.values()].some(values => !values.size)) return toast("每個已選日期都要選擇早上、下午、晚上、△ 不確定或 X。");
@@ -940,7 +947,7 @@ async function saveResponse(event) {
     [...nextBatchGroups.entries()].filter(([date]) => choices.has(date))
   );
   try {
-    await setDoc(doc(db, "quickSchedules", schedule.id, "responses", user.uid), {
+    await saveOpenResponse({
       playerName: form.playerName.value.trim(),
       note: form.note.value.trim(),
       choices: choiceObject,
@@ -1064,6 +1071,7 @@ function groupedPlayerChoices(choiceObject = {}, savedGroups = {}) {
 
 
 function maybeOpenMergeConfirmDialog() {
+  if (schedule?.closed) return;
   if (document.querySelector("#merge-confirm-dialog")) return;
   const player = uniqueSubmittedResponses(responses).find(item =>
     item.needsReconciliation && item.responseIds?.includes(user?.uid)
@@ -1085,6 +1093,7 @@ function mergeConfirmChoiceButtons(date, selected, locked = false) {
 }
 
 function openMergeConfirmDialog(player) {
+  if (schedule?.closed) return toast("此約團已結束。");
   if (!player?.responseIds?.includes(user?.uid)) return;
   document.querySelector("#merge-confirm-dialog")?.remove();
   const state = new Map(Object.entries(player.choices || {}).map(([date, values]) => [date, new Set(values)]));
@@ -1134,7 +1143,7 @@ function openMergeConfirmDialog(player) {
       ...(values.has("X") ? ["X"] : [])
     ]]));
     try {
-      await setDoc(doc(db, "quickSchedules", schedule.id, "responses", user.uid), {
+      await saveOpenResponse({
         playerName: player.playerName,
         note: event.currentTarget.note.value.trim(),
         choices: choiceObject,
@@ -1191,6 +1200,7 @@ function bindOverviewActions() {
     const responseIds = (target.dataset.responseIds || "").split(",").filter(Boolean);
     const isMine = responseIds.includes(user?.uid);
     if (!user || !responseIds.length || (!isMine && !canManageSchedule)) return;
+    if (schedule?.closed && !canManageSchedule) return toast("此約團已結束。");
     const deletableResponseIds = canManageSchedule
       ? responseIds
       : responseIds.filter(responseId => responseId === user.uid);
@@ -1273,3 +1283,74 @@ start().catch(error => {
   console.error(error);
   root.innerHTML = '<main class="error-screen"><h1>網站初始化失敗</h1><p>請確認 Firebase 設定。</p></main>';
 });
+
+function applyClosedState() {
+  const closed = schedule?.closed === true;
+  const status = document.querySelector("#schedule-status");
+  if (status) status.textContent = closed ? "此約團已結束，填表已關閉；結果仍可查看與匯出。" : "";
+  if (!closed) return;
+  document.querySelector("#merge-confirm-dialog")?.close();
+  document.querySelectorAll("#response-form input, #response-form textarea, #response-form button, .review-merged-response").forEach(node => { node.disabled = true; });
+  if (!canManageSchedule) document.querySelectorAll(".delete-my-response").forEach(node => { node.disabled = true; });
+  const button = document.querySelector("#close-schedule");
+  if (button) { button.disabled = true; button.textContent = "約團已結束"; }
+}
+
+async function saveOpenResponse(data) {
+  const id = schedule.id;
+  await runTransaction(db, async transaction => {
+    const current = await transaction.get(doc(db, "quickSchedules", id));
+    if (!current.exists() || current.data().closed === true) throw new Error("約團已結束，無法儲存");
+    transaction.set(doc(db, "quickSchedules", id, "responses", user.uid), data);
+  });
+}
+
+async function closeSchedule(event) {
+  if (!canManageSchedule || !routeInfo().token || schedule.closed) return;
+  if (!window.confirm("確定結束這張約團表？結束後玩家無法新增、修改或刪除填寫，原有結果會保留並可匯出。")) return;
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    await updateDoc(doc(db, "quickSchedules", schedule.id), { closed: true, closedAt: serverTimestamp() });
+    schedule.closed = true;
+    applyClosedState();
+    toast("約團已結束，結果已保留。");
+  } catch (error) {
+    console.error(error);
+    button.disabled = false;
+    toast("結束約團失敗，請確認管理權限後重試。");
+  }
+}
+
+function scheduleResultsText() {
+  const players = uniqueSubmittedResponses(responses);
+  const lines = [schedule.title || "約團結果",
+    "建立者：" + (schedule.coordinatorName || ""),
+    "狀態：" + (schedule.closed ? "已結束" : "填表中"),
+    playerRangeLabel(), "",
+    "時段：" + PERIOD_KEYS.map(p => p + " " + (schedule.periods?.[p] || "")).join("／"),
+    "△ 不確定不計入確定成團人數；不開放日期不計入成團。", "", "【可成團時段】"];
+  const slots = bestSlots(players);
+  if (!slots.length) lines.push("目前沒有達到最低成團人數的時段。");
+  for (const slot of slots) lines.push(dateLabel(slot.date, true) + "・" + slot.period + "（" + slot.count + " 人）：" + slot.players.map(p => p.playerName).join("、"));
+  lines.push("", "【玩家填寫結果】");
+  for (const player of players) {
+    lines.push(player.playerName + (player.needsReconciliation ? "（同名合併待確認）" : ""));
+    for (const group of groupedPlayerChoices(player.choices, player.batchGroups)) lines.push("  " + compactDateRangeLabel(group.start, group.end) + "：" + group.label);
+    if (player.note) lines.push("  備註：" + player.note);
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+function exportScheduleResults() {
+  const blob = new Blob(["\uFEFF", scheduleResultsText()], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = (schedule.title || "約團").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").slice(0,80) + "-約團結果.txt";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
