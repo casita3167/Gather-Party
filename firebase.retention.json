@@ -1,0 +1,16 @@
+{
+  "functions": [
+    {
+      "source": "retention-functions",
+      "codebase": "retention",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "*.test.js"
+      ]
+    }
+  ],
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}
