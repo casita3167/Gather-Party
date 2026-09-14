@@ -1294,6 +1294,18 @@ function applyClosedState() {
   if (!canManageSchedule) document.querySelectorAll(".delete-my-response").forEach(node => { node.disabled = true; });
   const button = document.querySelector("#close-schedule");
   if (button) { button.disabled = true; button.textContent = "約團已結束"; }
+  if (button && canManageSchedule && routeInfo().token && !document.querySelector("#delete-ended-schedule")) {
+    const deleteButton = document.createElement("button");
+    deleteButton.id = "delete-ended-schedule";
+    deleteButton.type = "button";
+    deleteButton.className = "button reject";
+    deleteButton.textContent = "刪除約團表";
+    deleteButton.addEventListener("click", () => {
+      if (!schedule?.closed || !canManageSchedule || !routeInfo().token) return;
+      deleteQuickSchedule(schedule.id, schedule.title, deleteButton);
+    });
+    button.insertAdjacentElement("afterend", deleteButton);
+  }
 }
 
 async function saveOpenResponse(data) {
