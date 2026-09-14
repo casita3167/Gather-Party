@@ -204,6 +204,7 @@ service cloud.firestore {
         allow read: if true;
         allow create, update: if signedIn()
           && request.auth.uid == userId
+          && get(/databases/$(database)/documents/quickSchedules/$(scheduleId)).data.get('closed', false) == false
           && preservesLockedQuickDates(scheduleId)
           && request.resource.data.playerName is string
           && request.resource.data.playerName.size() >= 1
@@ -213,7 +214,9 @@ service cloud.firestore {
           && request.resource.data.choices is map
           && request.resource.data.submitted == true;
         allow delete: if signedIn()
-          && (request.auth.uid == userId || managesQuickSchedule(scheduleId));
+          && (managesQuickSchedule(scheduleId)
+            || (request.auth.uid == userId
+              && get(/databases/$(database)/documents/quickSchedules/$(scheduleId)).data.get('closed', false) == false));
       }
 
       // 高熵隨機 token 只存在私人管理連結中；集合不可由一般使用者列出。
