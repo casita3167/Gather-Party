@@ -241,3 +241,46 @@
   .merge-confirm-row { padding:8px; }
   .merge-confirm-choices { gap:4px; }
 }
+
+
+/* Keep holiday labels above player names, including narrow calendars. */
+.quick-day.holiday:not(.locked) {
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  grid-template-rows:auto auto 20px;
+  gap:3px;
+  align-content:space-between;
+  min-height:76px;
+}
+.quick-day.holiday:not(.locked) > span:first-child { grid-column:1; grid-row:1; }
+.quick-day.holiday:not(.locked) > small {
+  position:static;
+  display:block;
+  grid-column:2;
+  grid-row:1;
+  justify-self:end;
+  max-width:100%;
+  min-width:0;
+  color:var(--red);
+  background:#fff8f7;
+  border-radius:3px;
+  font-size:.61rem;
+  line-height:1.25;
+  text-align:right;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  overflow:visible;
+}
+.quick-day.holiday:not(.locked) .calendar-batch-number {
+  position:static;
+  grid-column:2;
+  grid-row:2;
+  justify-self:end;
+}
+.quick-day.holiday:not(.locked) .calendar-players {
+  position:static;
+  grid-column:1 / -1;
+  grid-row:3;
+  align-self:end;
+  min-width:0;
+}
