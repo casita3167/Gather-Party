@@ -62,11 +62,12 @@ function adminStyles() {
     .admin-edit-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.admin-edit-head h2{margin:3px 0 0}.admin-edit-head p{margin:5px 0 0;color:var(--muted,#777)}
     .admin-edit-card label{display:grid;gap:7px;font-weight:650}.admin-edit-card input,.admin-edit-card textarea{width:100%;box-sizing:border-box;padding:11px 13px;border:1px solid var(--line,#ddd);border-radius:12px;background:var(--card,#fff);color:inherit;font:inherit}.admin-edit-card textarea{min-height:88px;resize:vertical}
     .admin-edit-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.admin-period-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+    .admin-gm-section{display:grid;gap:10px;padding:14px;border:1px solid var(--line,#eee);border-radius:14px}.admin-gm-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.admin-gm-option{display:flex!important;grid-template-columns:none!important;align-items:center;gap:9px;padding:10px;border:1px solid var(--line,#ddd);border-radius:10px;font-weight:700!important}.admin-gm-option input{width:18px!important;height:18px;accent-color:#ad7800}.admin-gm-badge{color:#806000}
     .admin-lock-section{display:grid;gap:10px;padding-top:8px;border-top:1px solid var(--line,#eee)}.admin-lock-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.admin-lock-nav{display:flex;gap:6px;align-items:center}.admin-lock-nav button{min-width:38px}
     .admin-calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}.admin-weekday{text-align:center;font-size:12px;color:var(--muted,#777);padding:4px}
     .admin-day{min-height:62px;padding:7px;border:1px solid var(--line,#ddd);border-radius:11px;background:var(--card,#fff);color:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between}.admin-day:hover{border-color:#7367e8}.admin-day.locked{background:rgba(111,94,224,.13);border-color:#7367e8}.admin-day.holiday:not(.locked){background:rgba(220,74,93,.06)}.admin-day small{font-size:10px;color:var(--muted,#777)}
     .admin-dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;padding-top:6px}
-    @media(max-width:760px){.quick-admin-stats{grid-template-columns:1fr}.quick-admin-row{align-items:flex-start;flex-direction:column}.quick-admin-actions{width:100%;justify-content:flex-start}.quick-admin-search{max-width:none;width:100%}.admin-edit-grid,.admin-period-grid{grid-template-columns:1fr}.admin-edit-card{padding:18px}.admin-day{min-height:52px;padding:5px}}
+    @media(max-width:760px){.quick-admin-stats{grid-template-columns:1fr}.quick-admin-row{align-items:flex-start;flex-direction:column}.quick-admin-actions{width:100%;justify-content:flex-start}.quick-admin-search{max-width:none;width:100%}.admin-edit-grid,.admin-period-grid,.admin-gm-list{grid-template-columns:1fr}.admin-edit-card{padding:18px}.admin-day{min-height:52px;padding:5px}}
   </style>`;
 }
 
@@ -94,7 +95,7 @@ function homeGuideMarkup() {
     <details><summary>我是主持人（GM），如何認領？</summary>
       <p>填寫時間時勾選「我是本團主持人（GM，不計入玩家人數）」，再儲存。已送出者可按自己名字旁的「修改時間」，在彈窗中勾選並儲存；取消勾選並儲存即可回復玩家身分。</p>
       <p>GM 名字以黃色顯示，時間照常填寫，但不計入玩家人數。成團必須是同一天、同一時段 GM 確定有空，且玩家達到最低門檻。例如 4～6 人代表 1 位 GM 加上 4～6 位玩家；超額玩家資料仍保留。</p>
-      <p>沒有 GM 認領或 GM 選 △ 時，暫不判定成團。每張表以一位 GM 為準；若兩人同時認領，請協調由其中一人取消，確認前不判定成團。建立者／統計者不會自動成為 GM。</p>
+      <p>沒有 GM 認領或 GM 選 △ 時，暫不判定成團。每張表預設最多 3 位 GM；至少一位 GM 在該時段確定有空即可。若需要更多 GM，請由私人管理連結或管理後台提高上限。建立者／統計者不會自動成為 GM。管理後台也能替更新前建立的約團表，從既有填表者中指定 GM。</p>
     </details>
     <details open><summary>第一次填寫：選日期、選時段、儲存</summary>
       <ol><li>開啟建立者提供的「玩家填表連結」，輸入固定使用的玩家名稱。</li>
@@ -175,7 +176,7 @@ async function loadSchedules() {
   const snap = await getDocs(collection(db, "quickSchedules"));
   const result = await Promise.all(snap.docs.map(async item => {
     const responseSnap = await getDocs(collection(db, "quickSchedules", item.id, "responses"));
-    return { id: item.id, ...item.data(), responseCount: responseSnap.size };
+    return { id: item.id, ...item.data(), responseCount: responseSnap.size, responses: responseSnap.docs.map(response => ({ id: response.id, ...response.data() })) };
   }));
   return result.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
 }
@@ -266,6 +267,8 @@ function openManageSchedule(schedule) {
   const today = new Date();
   let cursor = new Date(today.getFullYear(), today.getMonth(), 1);
   const periods = schedule.periods || {};
+  const responseRows = schedule.responses || [];
+  const assignedGMIds = new Set(responseRows.filter(response => response.isGM === true).map(response => response.id));
   const dialog = document.createElement("dialog");
   dialog.className = "admin-edit-dialog";
   dialog.innerHTML = `<form class="admin-edit-card" id="admin-edit-form">
@@ -274,7 +277,8 @@ function openManageSchedule(schedule) {
     <div class="admin-edit-grid"><label>建立者／統計者<input name="coordinatorName" maxlength="40" value="${escapeHtml(schedule.coordinatorName || "")}" required></label><label>實際 GM<input name="gmName" maxlength="40" value="${escapeHtml(schedule.gmName || "")}" placeholder="尚未確定可留白"></label></div>
     <label>給玩家的聯絡方式（選填）<input name="contact" maxlength="120" value="${escapeHtml(schedule.contact || "")}"></label>
     <label>給玩家的說明<textarea name="note" maxlength="800">${escapeHtml(schedule.note || "")}</textarea></label>
-    <div class="admin-edit-grid"><label>最低成團人數<input name="minPlayers" type="number" min="1" max="20" value="${Number(schedule.minPlayers || 1)}" required></label><label>最多參加人數（選填）<input name="maxPlayers" type="number" min="1" max="20" value="${schedule.maxPlayers ? Number(schedule.maxPlayers) : ""}" placeholder="不設上限"></label></div>
+    <div class="admin-edit-grid"><label>最低成團人數<input name="minPlayers" type="number" min="1" max="20" value="${Number(schedule.minPlayers || 1)}" required></label><label>最多參加人數（選填）<input name="maxPlayers" type="number" min="1" max="20" value="${schedule.maxPlayers ? Number(schedule.maxPlayers) : ""}" placeholder="不設上限"></label><label>GM 人數上限<input name="maxGMs" type="number" min="1" max="20" value="${Math.min(20, Math.max(1, Number(schedule.maxGMs || 3)))}" required></label></div>
+    <section class="admin-gm-section"><div><h3>指定既有填表者為 GM</h3><p class="muted">可替更新前建立的約團表補上 GM；GM 不計入玩家人數。</p></div><div class="admin-gm-list">${responseRows.length ? responseRows.map(response => `<label class="admin-gm-option"><input type="checkbox" name="assignedGM" value="${escapeHtml(response.id)}" ${assignedGMIds.has(response.id) ? "checked" : ""}><span class="${assignedGMIds.has(response.id) ? "admin-gm-badge" : ""}">${escapeHtml(response.playerName || "未命名玩家")}</span></label>`).join("") : '<span class="muted">尚無玩家填表，之後可再回來指定。</span>'}</div></section>
     <div><h3>時段範圍</h3><div class="admin-period-grid"><label>早上<input name="morning" value="${escapeHtml(periods["早上"] || "09:00～12:00")}" required></label><label>下午<input name="afternoon" value="${escapeHtml(periods["下午"] || "13:00～18:00")}" required></label><label>晚上<input name="evening" value="${escapeHtml(periods["晚上"] || "20:30～24:00")}" required></label></div></div>
     <section class="admin-lock-section"><div class="admin-lock-head"><div><h3>不開放日期</h3><small id="admin-lock-count">已設定 ${lockedDates.size} 天</small></div><div class="admin-lock-nav"><button class="mini-button" type="button" data-prev>‹</button><b data-month></b><button class="mini-button" type="button" data-next>›</button></div></div><p class="muted">點日期即可切換鎖定。玩家原本的填寫會保留，但鎖定期間不會計入成團。</p><div data-calendar></div></section>
     <div class="admin-dialog-actions"><button class="button secondary" type="button" data-close>取消</button><button class="button" type="submit">儲存修改</button></div>
@@ -316,7 +320,10 @@ function openManageSchedule(schedule) {
     const saveButton = form.querySelector('button[type="submit"]');
     const minPlayers = Number(form.minPlayers.value);
     const maxPlayers = Number(form.maxPlayers.value || 0);
+    const maxGMs = Math.min(20, Math.max(1, Number(form.maxGMs.value) || 3));
+    const selectedGMIds = new Set([...form.querySelectorAll('input[name="assignedGM"]:checked')].map(input => input.value));
     if (maxPlayers && maxPlayers < minPlayers) return toast("最多參加人數不能少於最低成團人數。");
+    if (selectedGMIds.size > maxGMs) return toast(`目前選了 ${selectedGMIds.size} 位 GM，超過上限 ${maxGMs} 位。`);
     saveButton.disabled = true;
     try {
       const changes = {
@@ -327,6 +334,7 @@ function openManageSchedule(schedule) {
         note: form.note.value.trim(),
         minPlayers,
         maxPlayers: maxPlayers || null,
+        maxGMs,
         periods: {
           "早上": form.morning.value.trim(),
           "下午": form.afternoon.value.trim(),
@@ -335,7 +343,16 @@ function openManageSchedule(schedule) {
         lockedDates: Object.fromEntries([...lockedDates].sort().map(date => [date, true])),
         updatedAt: serverTimestamp()
       };
-      await updateDoc(doc(db, "quickSchedules", schedule.id), changes);
+      const batch = writeBatch(db);
+      batch.update(doc(db, "quickSchedules", schedule.id), changes);
+      responseRows.forEach(response => {
+        const nextIsGM = selectedGMIds.has(response.id);
+        if ((response.isGM === true) !== nextIsGM) {
+          batch.update(doc(db, "quickSchedules", schedule.id, "responses", response.id), { isGM: nextIsGM, updatedAt: serverTimestamp() });
+          response.isGM = nextIsGM;
+        }
+      });
+      await batch.commit();
       const index = schedules.findIndex(item => item.id === schedule.id);
       if (index >= 0) schedules[index] = { ...schedules[index], ...changes };
       dialog.close();
