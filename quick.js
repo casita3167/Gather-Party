@@ -689,7 +689,12 @@ function periodLegendMarkup(ranges) {
 }
 
 function bestSlotPlayersMarkup(players = []) {
-  return `<span class="best-slot-players" aria-label="可以參加的人員">${players.map(player => `<span class="best-slot-player ${player.isGM ? "gm-player" : ""}" title="${escapeHtml(player.playerName)}${player.isGM ? "（GM）" : ""}" aria-label="${escapeHtml(player.playerName)}${player.isGM ? "（GM）" : ""}">${escapeHtml(Array.from(player.playerName || "玩家")[0])}</span>`).join("")}</span>`;
+  return `<span class="best-slot-players" aria-label="可以參加的人員">${players.map(player => {
+    const hasNote = Boolean(player.note?.trim());
+    const identity = `${player.playerName}${player.isGM ? "（GM）" : ""}`;
+    const noteLabel = hasNote ? "，有備註，請至玩家時間一覽查看" : "";
+    return `<span class="best-slot-player ${player.isGM ? "gm-player" : ""} ${hasNote ? "has-note" : ""}" title="${escapeHtml(identity + noteLabel)}" aria-label="${escapeHtml(identity + noteLabel)}">${escapeHtml(Array.from(player.playerName || "玩家")[0])}${hasNote ? '<sup class="note-alert" aria-hidden="true">!</sup>' : ""}</span>`;
+  }).join("")}</span>`;
 }
 
 function bestMarkup(items, total) {
@@ -1340,7 +1345,9 @@ function overviewMarkup(players) {
     const mergeNotice = player.needsReconciliation
       ? `<div class="merge-review-notice"><p>已整理 ${player.mergedCount} 筆同名填寫，請確認日期與時段。</p>${isMine ? `<button class="button secondary review-merged-response" type="button" data-player-key="${escapeHtml(normalizedPlayerName(player.playerName))}">確認合併內容</button>` : ""}</div>`
       : "";
-    return `<article class="player-availability"><header><h3 class="${player.isGM ? "gm-name" : ""}">${escapeHtml(player.playerName)}${player.isGM ? "（GM）" : ""}</h3>${isMine && !schedule?.closed ? `<button type="button" class="button secondary edit-my-time">修改時間</button>` : ""}${deleteButton}</header>${mergeNotice}${player.note ? `<p class="response-note">${escapeHtml(player.note)}</p>` : ""}<div>${groupedChoices.map(group => `<span class="player-date-choice"><b>${escapeHtml(compactDateRangeLabel(group.start, group.end))}</b><i class="choice-mark ${group.isUnavailable ? "no" : ""}">${escapeHtml(group.label)}</i></span>`).join("")}</div></article>`;
+    const hasNote = Boolean(player.note?.trim());
+    const noteAlert = hasNote ? `<span class="player-note-alert" title="${escapeHtml(`備註：${player.note.trim()}`)}" aria-label="這位玩家有備註">!</span>` : "";
+    return `<article class="player-availability"><header><div class="player-name-line"><h3 class="${player.isGM ? "gm-name" : ""}">${escapeHtml(player.playerName)}${player.isGM ? "（GM）" : ""}</h3>${noteAlert}</div>${isMine && !schedule?.closed ? `<button type="button" class="button secondary edit-my-time">修改時間</button>` : ""}${deleteButton}</header>${mergeNotice}${hasNote ? `<p class="response-note">${escapeHtml(player.note.trim())}</p>` : ""}<div>${groupedChoices.map(group => `<span class="player-date-choice"><b>${escapeHtml(compactDateRangeLabel(group.start, group.end))}</b><i class="choice-mark ${group.isUnavailable ? "no" : ""}">${escapeHtml(group.label)}</i></span>`).join("")}</div></article>`;
   }).join("")}</div>`;
 }
 
