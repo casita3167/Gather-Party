@@ -358,3 +358,26 @@
   font-weight:950;
   line-height:1;
 }
+
+.best-slot-controls {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+  margin:14px 0;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:#f8f8fb;
+}
+.best-slot-controls label { min-width:0; margin:0; }
+.best-slot-controls label > span {
+  display:block;
+  margin-bottom:5px;
+  color:var(--muted);
+  font-size:.78rem;
+  font-weight:800;
+}
+.best-slot-controls select { width:100%; min-width:0; }
+@media (max-width:560px) {
+  .best-slot-controls { grid-template-columns:1fr; }
+}
