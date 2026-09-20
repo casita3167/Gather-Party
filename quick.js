@@ -107,7 +107,7 @@ function renderCreate() {
     <form id="create-quick" class="quick-card quick-create-form">
       <section><h2>團務與聯絡資訊</h2><p>建立者只需要設定團務資訊與時段範圍；每位玩家打開連結後，會自行從月曆選擇可跑日期。</p>
         <label>團務名稱<input name="title" maxlength="80" required placeholder="例如：十月團務時間調查"></label>
-        <div class="form-grid"><label>建立者／統計者<input name="coordinatorName" maxlength="40" required placeholder="你的名稱"></label><label>實際 GM<input name="gmName" maxlength="40" placeholder="尚未確定可留白"></label></div>
+        <div class="form-grid"><label>建立者／統計者<input name="coordinatorName" maxlength="40" required placeholder="你的名稱"></label><label>預定 GM（選填）<input name="gmName" maxlength="40" placeholder="實際 GM 仍須由填表者認領"></label></div>
         <label>給玩家的聯絡方式（選填）<input name="contact" maxlength="120" placeholder="Discord、LINE 或其他聯絡方式"></label>
         <label>給玩家的說明<textarea name="note" maxlength="800" placeholder="預計遊玩的系統、時數或其他提醒"></textarea></label>
         <div class="form-grid"><label>最低成團人數<input name="minPlayers" type="number" min="1" max="20" value="4" required></label><label>最多參加人數（選填）<input name="maxPlayers" type="number" min="1" max="20" value="6" placeholder="不設上限"></label></div><small class="muted">同一天、同一時段 GM 有空且玩家達到最低人數即可成團；超過參加上限仍保留時段，由團務管理者協調名單。</small>
@@ -215,6 +215,7 @@ async function createSchedule(event) {
       title: form.elements.title.value.trim(),
       coordinatorName: form.coordinatorName.value.trim(),
       gmName: form.gmName.value.trim(),
+      maxGMs: 3,
       contact: form.contact.value.trim(),
       note: form.note.value.trim(),
       minPlayers,
@@ -297,6 +298,7 @@ async function openSchedule(id, routeManagementToken = "") {
           if (!latest.exists() || schedule?.id !== id) return;
           schedule.closed = latest.data().closed === true;
           schedule.lockedDates = latest.data().lockedDates || {};
+          schedule.maxGMs = latest.data().maxGMs || 3;
           restoreLockedChoices();
           refreshChoiceControls(schedule.periods || {});
           refreshOverview();
@@ -466,13 +468,19 @@ function playerRangeLabel(scheduleData = schedule) {
 }
 
 
+function maxGMCount(scheduleData = schedule) {
+  const value = Number(scheduleData?.maxGMs || 3);
+  return Number.isInteger(value) ? Math.min(20, Math.max(1, value)) : 3;
+}
 function gmClaimMarkup(isGM = false) {
-  const other = responses.some(r => r.id !== user?.uid && r.submitted && r.isGM === true);
-  return `<label class="gm-claim"><input type="checkbox" name="isGM" ${isGM ? "checked" : ""} ${other && !isGM ? "disabled" : ""}>我是本團主持人（GM，不計入玩家人數）</label><p class="muted">GM 以黃色標示。勾選後請儲存；取消勾選並儲存即可回復玩家身分。已有其他 GM 時無法認領。</p>`;
+  const claimed = uniqueSubmittedResponses(responses).filter(r => r.isGM === true);
+  const limit = maxGMCount();
+  const full = !isGM && claimed.length >= limit;
+  return `<label class="gm-claim"><input type="checkbox" name="isGM" ${isGM ? "checked" : ""} ${full ? "disabled" : ""}>我是本團主持人（GM，不計入玩家人數）</label><p class="muted">GM 以黃色標示，目前 ${claimed.length}／${limit} 位。勾選後請儲存；取消勾選並儲存即可回復玩家身分。${full ? " GM 名額已滿，如需增加請聯絡管理者。" : ""}</p>`;
 }
 function gmStatusText(players) {
   const gms = players.filter(p => p.isGM === true);
-  return gms.length === 0 ? "尚未有 GM 認領，暫不判定成團。" : gms.length > 1 ? "有多位 GM 同時認領，請協調保留一位，其餘取消認領；暫不判定成團。" : "GM：" + gms[0].playerName;
+  return gms.length ? "GM：" + gms.map(gm => gm.playerName).join("、") : "尚未有 GM 認領，暫不判定成團。";
 }
 
 function renderSchedule(mineData) {
@@ -596,7 +604,7 @@ function openEditScheduleDialog() {
   const dialog = document.createElement("dialog");
   dialog.id = "edit-schedule-dialog";
   const periods = schedule.periods || {};
-  dialog.innerHTML = `<form method="dialog" class="dialog-card" id="edit-schedule-form"><div class="dialog-head"><div><span class="eyebrow">MANAGEMENT</span><h2>編輯約團設定</h2></div><button class="icon-button" type="button" data-close aria-label="關閉">×</button></div><label>團務名稱<input name="title" maxlength="80" value="${escapeHtml(schedule.title)}" required></label><div class="form-grid"><label>建立者／統計者<input name="coordinatorName" maxlength="40" value="${escapeHtml(schedule.coordinatorName)}" required></label><label>實際 GM<input name="gmName" maxlength="40" value="${escapeHtml(schedule.gmName || "")}" placeholder="尚未確定可留白"></label></div><label>給玩家的聯絡方式（選填）<input name="contact" maxlength="120" value="${escapeHtml(schedule.contact || "")}"></label><label>給玩家的說明<textarea name="note" maxlength="800">${escapeHtml(schedule.note || "")}</textarea></label><div class="form-grid"><label>最低成團人數<input name="minPlayers" type="number" min="1" max="20" value="${Number(schedule.minPlayers || 1)}" required></label><label>最多參加人數（選填）<input name="maxPlayers" type="number" min="1" max="20" value="${schedule.maxPlayers ? Number(schedule.maxPlayers) : ""}" placeholder="不設上限"></label></div><small class="muted">同一天、同一時段達到最低人數即可成團；超過參加上限仍保留時段，由團務管理者協調名單。</small><h3>時段範圍</h3><div class="period-settings"><label class="period-setting"><span>早上</span><input name="morning" value="${escapeHtml(periods["早上"] || "09:00～12:00")}" required></label><label class="period-setting"><span>下午</span><input name="afternoon" value="${escapeHtml(periods["下午"] || "13:00～18:00")}" required></label><label class="period-setting"><span>晚上</span><input name="evening" value="${escapeHtml(periods["晚上"] || "20:30～24:00")}" required></label></div><div class="dialog-actions"><button class="button secondary" type="button" data-close>取消</button><button class="button" type="submit">儲存設定</button></div></form>`;
+  dialog.innerHTML = `<form method="dialog" class="dialog-card" id="edit-schedule-form"><div class="dialog-head"><div><span class="eyebrow">MANAGEMENT</span><h2>編輯約團設定</h2></div><button class="icon-button" type="button" data-close aria-label="關閉">×</button></div><label>團務名稱<input name="title" maxlength="80" value="${escapeHtml(schedule.title)}" required></label><div class="form-grid"><label>建立者／統計者<input name="coordinatorName" maxlength="40" value="${escapeHtml(schedule.coordinatorName)}" required></label><label>預定 GM（選填）<input name="gmName" maxlength="40" value="${escapeHtml(schedule.gmName || "")}" placeholder="實際 GM 仍須由填表者認領"></label></div><label>給玩家的聯絡方式（選填）<input name="contact" maxlength="120" value="${escapeHtml(schedule.contact || "")}"></label><label>給玩家的說明<textarea name="note" maxlength="800">${escapeHtml(schedule.note || "")}</textarea></label><div class="form-grid"><label>最低成團人數<input name="minPlayers" type="number" min="1" max="20" value="${Number(schedule.minPlayers || 1)}" required></label><label>最多參加人數（選填）<input name="maxPlayers" type="number" min="1" max="20" value="${schedule.maxPlayers ? Number(schedule.maxPlayers) : ""}" placeholder="不設上限"></label><label>GM 人數上限<input name="maxGMs" type="number" min="1" max="20" value="${maxGMCount()}" required></label></div><small class="muted">同一天、同一時段達到最低人數即可成團；超過參加上限仍保留時段，由團務管理者協調名單。</small><h3>時段範圍</h3><div class="period-settings"><label class="period-setting"><span>早上</span><input name="morning" value="${escapeHtml(periods["早上"] || "09:00～12:00")}" required></label><label class="period-setting"><span>下午</span><input name="afternoon" value="${escapeHtml(periods["下午"] || "13:00～18:00")}" required></label><label class="period-setting"><span>晚上</span><input name="evening" value="${escapeHtml(periods["晚上"] || "20:30～24:00")}" required></label></div><div class="dialog-actions"><button class="button secondary" type="button" data-close>取消</button><button class="button" type="submit">儲存設定</button></div></form>`;
   root.appendChild(dialog);
   dialog.showModal();
   dialog.querySelectorAll("[data-close]").forEach(button => button.onclick = () => dialog.close());
@@ -608,8 +616,15 @@ function openEditScheduleDialog() {
     button.disabled = true;
     const minPlayers = Number(form.minPlayers.value);
     const maxPlayers = Number(form.maxPlayers.value || 0);
+    const maxGMs = Math.min(20, Math.max(1, Number(form.maxGMs.value) || 3));
+    const claimedGMs = uniqueSubmittedResponses(responses).filter(player => player.isGM).length;
     if (maxPlayers && maxPlayers < minPlayers) {
       toast("最多參加人數不能少於最低成團人數。");
+      button.disabled = false;
+      return;
+    }
+    if (maxGMs < claimedGMs) {
+      toast(`目前已有 ${claimedGMs} 位 GM，GM 上限不能設得更低。`);
       button.disabled = false;
       return;
     }
@@ -626,6 +641,7 @@ function openEditScheduleDialog() {
       note: form.note.value.trim(),
       minPlayers,
       maxPlayers: maxPlayers || null,
+      maxGMs,
       periods,
       updatedAt: serverTimestamp()
     };
@@ -678,7 +694,7 @@ function bestSlotPlayersMarkup(players = []) {
 
 function bestMarkup(items, total) {
   return items.length
-    ? items.slice(0, 10).map(item => `<div class="best-slot"><span class="best-slot-time">${escapeHtml(dateLabel(item.date, true))}・${escapeHtml(item.period)}</span><div class="best-slot-availability">${bestSlotPlayersMarkup([item.gm, ...item.players])}<small>GM 有空・${item.count}／${total} 位玩家${Number(schedule.maxPlayers) > 0 && item.count > Number(schedule.maxPlayers) ? `・可成團，最多 ${Number(schedule.maxPlayers)} 人參加` : ""}</small></div></div>`).join("")
+    ? items.slice(0, 10).map(item => `<div class="best-slot"><span class="best-slot-time">${escapeHtml(dateLabel(item.date, true))}・${escapeHtml(item.period)}</span><div class="best-slot-availability">${bestSlotPlayersMarkup([...item.availableGMs, ...item.players])}<small>${item.availableGMs.length} 位 GM 有空・${item.count}／${total} 位玩家${Number(schedule.maxPlayers) > 0 && item.count > Number(schedule.maxPlayers) ? `・可成團，最多 ${Number(schedule.maxPlayers)} 人參加` : ""}</small></div></div>`).join("")
     : '<div class="empty small">目前沒有 GM 有空且玩家達到最低人數的時段。</div>';
 }
 
@@ -986,8 +1002,7 @@ async function saveResponse(event) {
 
 function bestSlots(players) {
   const gms = players.filter(p => p.isGM === true);
-  if (gms.length !== 1) return [];
-  const gm = gms[0];
+  if (!gms.length) return [];
   players = players.filter(p => p.isGM !== true);
   const dates = [...new Set(players.flatMap(player => Object.keys(player.choices || {})))].filter(date => !isDateLocked(date)).sort();
   const slots = dates.flatMap(date => PERIOD_KEYS.map(period => {
@@ -997,12 +1012,11 @@ function bestSlots(players) {
       period,
       count: availablePlayers.length,
       players: availablePlayers,
-      gmAvailable: gm.choices?.[date]?.includes(period) === true,
-      gm
+      availableGMs: gms.filter(gm => gm.choices?.[date]?.includes(period))
     };
   }));
   const minimum = Number(schedule.minPlayers || 1);
-  const enough = slots.filter(item => item.gmAvailable && item.count >= minimum);
+  const enough = slots.filter(item => item.availableGMs.length > 0 && item.count >= minimum);
   return enough.sort((a, b) => b.count - a.count || a.date.localeCompare(b.date) || PERIOD_KEYS.indexOf(a.period) - PERIOD_KEYS.indexOf(b.period));
 }
 
@@ -1287,7 +1301,7 @@ function openTimeEditor(player) {
     const choiceObject=Object.fromEntries([...draft].sort(([a],[b])=>a.localeCompare(b)).map(([d,v])=>[d,[...PERIOD_KEYS,"△","X"].filter(p=>v.has(p))]));
     const data={playerName:player.playerName,isGM:e.currentTarget.isGM.checked,note:e.currentTarget.note.value.trim(),choices:choiceObject,batchGroups:Object.fromEntries(normalizeBatchGroups(choiceObject)),submitted:true,reconciledResponseIds:player.responseIds,reconciledAt:serverTimestamp(),updatedAt:serverTimestamp()};
     try{
-      if(data.isGM && responses.some(r => r.id !== uid && r.submitted && r.isGM)) throw Error("已有其他 GM，請取消勾選後再儲存。");
+      if(data.isGM && uniqueSubmittedResponses(responses).filter(r => r.isGM && !r.responseIds?.includes(uid)).length >= maxGMCount()) throw Error("GM 名額已滿，請聯絡管理者調高上限。");
       await runTransaction(db,async tx=>{
         const parent=await tx.get(doc(db,"quickSchedules",scheduleId));
         const ref=doc(db,"quickSchedules",scheduleId,"responses",uid);
@@ -1461,7 +1475,7 @@ function applyClosedState() {
 async function saveOpenResponse(data) {
   const id = schedule.id;
   if (typeof data.isGM !== "boolean") data.isGM = responses.find(r => r.id === user?.uid)?.isGM === true;
-  if (data.isGM && responses.some(r => r.id !== user?.uid && r.submitted && r.isGM)) throw Error("已有其他 GM，請取消勾選後再儲存。");
+  if (data.isGM && uniqueSubmittedResponses(responses).filter(r => r.isGM && !r.responseIds?.includes(user?.uid)).length >= maxGMCount()) throw Error("GM 名額已滿，請聯絡管理者調高上限。");
   await runTransaction(db, async transaction => {
     const current = await transaction.get(doc(db, "quickSchedules", id));
     if (!current.exists() || current.data().closed === true) throw new Error("約團已結束，無法儲存");
@@ -1496,7 +1510,7 @@ function scheduleResultsText() {
     "GM 不計入玩家人數；須 GM 有空且玩家達門檻才能成團。△ 不確定與不開放日期不計入成團。", gmStatusText(players), "", "【可成團時段】"];
   const slots = bestSlots(players);
   if (!slots.length) lines.push("目前沒有達到最低成團人數的時段。");
-  for (const slot of slots) lines.push(dateLabel(slot.date, true) + "・" + slot.period + "（" + slot.count + " 位玩家＋GM：" + slot.gm.playerName + "）：" + slot.players.map(p => p.playerName).join("、"));
+  for (const slot of slots) lines.push(dateLabel(slot.date, true) + "・" + slot.period + "（" + slot.count + " 位玩家＋GM：" + slot.availableGMs.map(gm => gm.playerName).join("、") + "）：" + slot.players.map(p => p.playerName).join("、"));
   lines.push("", "【玩家填寫結果】");
   for (const player of players) {
     lines.push(player.playerName + (player.isGM ? "（GM，不計入玩家人數）" : "") + (player.needsReconciliation ? "（同名合併待確認）" : ""));
