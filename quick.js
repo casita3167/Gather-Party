@@ -744,12 +744,9 @@ function responseCalendarMarkup() {
     const holiday = holidayFor(date);
     const chosen = choices.has(date);
     const inBatch = batchDates.has(date);
-    const batchNumber = batchGroups.get(date);
     const dayNote = isDateLocked(date) ? "🔒 不開放" : holiday || (date === today ? "今天" : "");
-    const title = inBatch
-      ? `目前選取・${dayNote || date}`
-      : batchNumber ? `第 ${batchNumber} 批・${dayNote || date}` : dayNote || date;
-    cells.push(`<button class="quick-day ${isDateLocked(date) ? "locked" : ""} ${inBatch ? "selected batch-target" : ""} ${chosen && !inBatch ? "committed" : ""} ${holiday ? "holiday" : ""} ${date === today ? "today" : ""}" type="button" data-response-date="${date}" ${isDateLocked(date) ? "disabled" : ""} title="${escapeHtml(title)}" aria-pressed="${chosen}"><span>${day}</span>${batchNumber && !inBatch ? `<span class="calendar-batch-number" aria-label="第 ${batchNumber} 批">${batchNumber}</span>` : ""}${calendarPlayersMarkup(date)}${dayNote ? `<small>${escapeHtml(dayNote)}</small>` : ""}</button>`);
+    const title = inBatch ? `目前選取・${dayNote || date}` : dayNote || date;
+    cells.push(`<button class="quick-day ${isDateLocked(date) ? "locked" : ""} ${inBatch ? "selected batch-target" : ""} ${chosen && !inBatch ? "committed" : ""} ${holiday ? "holiday" : ""} ${date === today ? "today" : ""}" type="button" data-response-date="${date}" ${isDateLocked(date) ? "disabled" : ""} title="${escapeHtml(title)}" aria-pressed="${chosen}"><span>${day}</span>${calendarPlayersMarkup(date)}${dayNote ? `<small>${escapeHtml(dayNote)}</small>` : ""}</button>`);
   }
   return `<div class="quick-calendar"><div class="quick-weekday">一</div><div class="quick-weekday">二</div><div class="quick-weekday">三</div><div class="quick-weekday">四</div><div class="quick-weekday">五</div><div class="quick-weekday">六</div><div class="quick-weekday">日</div>${cells.join("")}</div>`;
 }
