@@ -284,3 +284,36 @@
   align-self:end;
   min-width:0;
 }
+
+/* Result cards: date, three-column player grid, then attendance summary. */
+.best-slot {
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  justify-content:flex-start;
+  gap:10px;
+  min-width:0;
+}
+.best-slot-time { flex:none; min-width:0; overflow-wrap:anywhere; }
+.best-slot-availability {
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  justify-content:flex-start;
+  gap:9px;
+  width:100%;
+  min-width:0;
+}
+.best-slot-players {
+  display:grid;
+  grid-template-columns:repeat(3,27px);
+  gap:6px;
+  justify-content:start;
+}
+.best-slot-player { box-sizing:border-box; }
+.best-slot small {
+  flex:none;
+  max-width:100%;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
