@@ -1170,6 +1170,134 @@ function openMergeConfirmDialog(player) {
   dialog.showModal();
 }
 
+
+function openTimeEditor(player) {
+  if (schedule?.closed || !player?.responseIds?.includes(user?.uid)) return;
+  document.querySelector("#time-edit-dialog")?.close();
+  const scheduleId = schedule.id, uid = user.uid;
+  const own = responses.find(item => item.id === uid);
+  if (!own) return;
+  const fingerprint = value => JSON.stringify([value.choices || {}, value.note || "", value.updatedAt?.toMillis?.() || 0]);
+  const original = fingerprint(own);
+  const draft = new Map(Object.entries(player.choices || {}).map(([date, values]) => [date, new Set(values)]));
+  for (const date of Object.keys(schedule.lockedDates || {})) {
+    if (own.choices?.[date]) draft.set(date, new Set(own.choices[date]));
+    else draft.delete(date);
+  }
+  const selected = new Set();
+  let cursor = (Object.keys(player.choices || {}).sort()[0] || taiwanTodayKey()).slice(0,7);
+  let busy = false;
+  const dialog = document.createElement("dialog");
+  dialog.id = "time-edit-dialog";
+  dialog.innerHTML = `<style>
+    #time-edit-dialog{box-sizing:border-box;width:min(760px,calc(100vw - 24px));max-width:calc(100vw - 24px);max-height:90dvh;margin:auto;padding:clamp(12px,3vw,24px);border:0;border-radius:20px;overflow:auto;color:var(--ink);background:white}
+    #time-edit-dialog::backdrop{background:rgb(20 20 40 / .55)}
+    #time-edit-dialog .edit-head,#time-edit-dialog .edit-nav,#time-edit-dialog .edit-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+    #time-edit-dialog h2{font-size:clamp(1.2rem,4vw,1.7rem);margin:0}
+    #time-edit-dialog .edit-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;margin:12px 0}
+    #time-edit-dialog .edit-day{min-width:0;min-height:64px;border:1px solid var(--line);border-radius:9px;background:white;color:var(--ink);padding:5px;overflow-wrap:anywhere}
+    #time-edit-dialog .edit-day small{display:block;font-size:.65rem}
+    #time-edit-dialog .edit-day.saved{border-color:var(--primary);background:var(--primary-soft)}
+    #time-edit-dialog .edit-day.target{background:var(--primary);color:white}
+    #time-edit-dialog .edit-day:disabled{opacity:.5}
+    #time-edit-dialog .edit-periods{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}
+    #time-edit-dialog .edit-preview{max-height:220px;overflow:auto;padding-left:22px}
+    #time-edit-dialog textarea{box-sizing:border-box;width:100%;min-height:80px;font:inherit}
+    #time-edit-dialog .edit-error{color:var(--red)}
+    #time-edit-dialog .edit-week{text-align:center}
+    @media(max-width:480px){#time-edit-dialog{width:calc(100vw - 12px);max-width:calc(100vw - 12px);max-height:96dvh;border-radius:12px}#time-edit-dialog .edit-day{min-height:60px;padding:3px}}
+  </style><form><div class="edit-head"><h2>${escapeHtml(player.playerName)}・修改時間</h2><button type="button" class="icon-button" data-cancel aria-label="取消修改">×</button></div>
+  <p>先選日期，再套用時段。淡紫底代表已有填寫，深紫底是本次要調整的日期；所有更動按「儲存修改」後才會送出。</p>
+  <div class="edit-nav"><button type="button" class="mini-button" data-month-step="-1" aria-label="上個月">‹</button><b data-month></b><button type="button" class="mini-button" data-month-step="1" aria-label="下個月">›</button></div>
+  <div class="edit-days"></div><p data-selection aria-live="polite"></p>
+  <div class="edit-periods">${[...PERIOD_KEYS,"△","X"].map(p => `<button type="button" class="choice-button" data-period="${p}">${p}</button>`).join("")}<button type="button" class="button secondary" data-remove>移除所選日期</button><button type="button" class="button secondary" data-clear>完成這批選取</button></div>
+  <p>同一批可依序勾選多個時段；完成後按「完成這批選取」，再選另一批日期。</p>
+  <h3>本次修改後的時間</h3><ul class="edit-preview"></ul>
+  <label>備註<textarea name="note" maxlength="500">${escapeHtml(player.note || "")}</textarea></label><p class="edit-error" role="alert"></p>
+  <div class="edit-actions"><button type="button" class="button secondary" data-cancel>取消</button><button type="submit" class="button">儲存修改</button></div></form>`;
+  document.body.append(dialog);
+  const draw = () => {
+    const [year,month] = cursor.split("-").map(Number);
+    dialog.querySelector("[data-month]").textContent = year + " 年 " + month + " 月";
+    let html = ["一","二","三","四","五","六","日"].map(d => '<span class="edit-week">' + d + '</span>').join("");
+    html += "<span></span>".repeat((new Date(year,month-1,1).getDay()+6)%7);
+    for(let day=1;day<=new Date(year,month,0).getDate();day++){
+      const date = cursor + "-" + String(day).padStart(2,"0");
+      const locked = isDateLocked(date);
+      const label = draft.has(date) ? choiceLabel([...draft.get(date)]) : "未填寫";
+      html += `<button type="button" class="edit-day ${draft.has(date) ? "saved" : ""} ${selected.has(date) ? "target" : ""}" data-edit-date="${date}" aria-pressed="${selected.has(date)}" aria-label="${date} ${escapeHtml(label)}${locked ? " 不開放" : ""}" ${locked ? "disabled" : ""}>${day}<small>${locked ? "🔒" : escapeHtml(label)}</small></button>`;
+    }
+    dialog.querySelector(".edit-days").innerHTML = html;
+    dialog.querySelector("[data-selection]").textContent = "目前選取 " + selected.size + " 天";
+    dialog.querySelector(".edit-preview").innerHTML = [...draft].sort(([a],[b])=>a.localeCompare(b)).map(([date,values])=>`<li>${escapeHtml(dateLabel(date))}：${escapeHtml(choiceLabel([...values]))}${isDateLocked(date) ? "（不開放，保留原紀錄）" : ""}</li>`).join("") || "<li>尚無日期</li>";
+    dialog.querySelectorAll("[data-edit-date]").forEach(b=>b.onclick=()=>{
+      selected.has(b.dataset.editDate) ? selected.delete(b.dataset.editDate) : selected.add(b.dataset.editDate);
+      draw();
+    });
+    dialog.querySelectorAll("[data-period]").forEach(b=>{
+      const all = selected.size > 0 && [...selected].every(d=>draft.get(d)?.has(b.dataset.period));
+      b.disabled = !selected.size;
+      b.classList.toggle("selected",all);
+      b.setAttribute("aria-pressed",String(all));
+    });
+    dialog.querySelector("[data-remove]").disabled = !selected.size;
+  };
+  dialog.querySelectorAll("[data-month-step]").forEach(b=>b.onclick=()=>{
+    const [y,m]=cursor.split("-").map(Number), next=new Date(y,m-1+Number(b.dataset.monthStep),1);
+    cursor=next.getFullYear()+"-"+String(next.getMonth()+1).padStart(2,"0"); draw();
+  });
+  dialog.querySelectorAll("[data-period]").forEach(b=>b.onclick=()=>{
+    const p=b.dataset.period, remove=[...selected].every(d=>draft.get(d)?.has(p));
+    for(const date of selected){
+      if(isDateLocked(date)) continue;
+      const values = new Set(draft.get(date) || []);
+      if(remove) values.delete(p);
+      else if(p==="△" || p==="X"){values.clear();values.add(p);}
+      else {values.delete("△");values.delete("X");values.add(p);}
+      draft.set(date,values);
+    }
+    draw();
+  });
+  dialog.querySelector("[data-remove]").onclick=()=>{for(const d of selected) if(!isDateLocked(d)) draft.delete(d);selected.clear();draw();};
+  dialog.querySelector("[data-clear]").onclick=()=>{selected.clear();draw();};
+  dialog.querySelectorAll("[data-cancel]").forEach(b=>b.onclick=()=>{if(!busy) dialog.close();});
+  dialog.addEventListener("cancel",e=>{if(busy)e.preventDefault();});
+  dialog.addEventListener("close",()=>dialog.remove());
+  dialog.querySelector("form").onsubmit=async e=>{
+    e.preventDefault();
+    const error=dialog.querySelector(".edit-error");
+    if(!draft.size || [...draft.values()].some(v=>!v.size)){error.textContent="請保留至少一天，並為每一天選擇時段、△ 或 X；不需要的日期請移除。";return;}
+    busy=true;
+    dialog.querySelectorAll("button,textarea").forEach(b=>b.disabled=true);
+    const choiceObject=Object.fromEntries([...draft].sort(([a],[b])=>a.localeCompare(b)).map(([d,v])=>[d,[...PERIOD_KEYS,"△","X"].filter(p=>v.has(p))]));
+    const data={playerName:player.playerName,note:e.currentTarget.note.value.trim(),choices:choiceObject,batchGroups:Object.fromEntries(normalizeBatchGroups(choiceObject)),submitted:true,reconciledResponseIds:player.responseIds,reconciledAt:serverTimestamp(),updatedAt:serverTimestamp()};
+    try{
+      await runTransaction(db,async tx=>{
+        const parent=await tx.get(doc(db,"quickSchedules",scheduleId));
+        const ref=doc(db,"quickSchedules",scheduleId,"responses",uid);
+        const current=await tx.get(ref);
+        if(user?.uid!==uid || schedule?.id!==scheduleId || !parent.exists() || parent.data().closed) throw Error("約團已結束或頁面已切換，無法儲存。");
+        if(!current.exists() || fingerprint(current.data())!==original) throw Error("紀錄已在其他視窗更新，請取消後重新開啟修改時間。");
+        for(const d of Object.keys(parent.data().lockedDates || {})){
+          if(JSON.stringify(current.data().choices?.[d])!==JSON.stringify(choiceObject[d])) throw Error("部分日期已被鎖定，請取消後重新開啟修改時間。");
+        }
+        tx.set(ref,data);
+      });
+      responses=responses.map(r=>r.id===uid?{...r,...data}:r);
+      choices=new Map([...draft].map(([d,v])=>[d,new Set(v)]));
+      batchGroups=normalizeBatchGroups(choiceObject);
+      batchDates.clear();batchApplied=false;
+      renderSchedule({...data,id:uid});
+      dialog.close();toast("你的時間已更新");
+    }catch(err){
+      error.textContent=err.message || "儲存失敗，請稍後再試。";
+      busy=false;dialog.querySelectorAll("button,textarea").forEach(b=>b.disabled=false);draw();
+    }
+  };
+  draw();dialog.showModal();
+}
+
+
 function overviewMarkup(players) {
   if (!players.length) return '<div class="empty">目前還沒有人填寫。</div>';
   return `<div class="player-availability-grid">${players.map(player => {
@@ -1182,11 +1310,15 @@ function overviewMarkup(players) {
     const mergeNotice = player.needsReconciliation
       ? `<div class="merge-review-notice"><p>已整理 ${player.mergedCount} 筆同名填寫，請確認日期與時段。</p>${isMine ? `<button class="button secondary review-merged-response" type="button" data-player-key="${escapeHtml(normalizedPlayerName(player.playerName))}">確認合併內容</button>` : ""}</div>`
       : "";
-    return `<article class="player-availability"><header><h3>${escapeHtml(player.playerName)}</h3>${deleteButton}</header>${mergeNotice}${player.note ? `<p class="response-note">${escapeHtml(player.note)}</p>` : ""}<div>${groupedChoices.map(group => `<span class="player-date-choice"><b>${escapeHtml(compactDateRangeLabel(group.start, group.end))}</b><i class="choice-mark ${group.isUnavailable ? "no" : ""}">${escapeHtml(group.label)}</i></span>`).join("")}</div></article>`;
+    return `<article class="player-availability"><header><h3>${escapeHtml(player.playerName)}</h3>${isMine && !schedule?.closed ? `<button type="button" class="button secondary edit-my-time">修改時間</button>` : ""}${deleteButton}</header>${mergeNotice}${player.note ? `<p class="response-note">${escapeHtml(player.note)}</p>` : ""}<div>${groupedChoices.map(group => `<span class="player-date-choice"><b>${escapeHtml(compactDateRangeLabel(group.start, group.end))}</b><i class="choice-mark ${group.isUnavailable ? "no" : ""}">${escapeHtml(group.label)}</i></span>`).join("")}</div></article>`;
   }).join("")}</div>`;
 }
 
 function bindOverviewActions() {
+  document.querySelectorAll(".edit-my-time").forEach(button => button.onclick = () => {
+    const player = uniqueSubmittedResponses(responses).find(p => p.responseIds?.includes(user?.uid));
+    if (player) openTimeEditor(player);
+  });
   document.querySelectorAll(".review-merged-response").forEach(button => button.addEventListener("click", () => {
     const player = uniqueSubmittedResponses(responses).find(item =>
       item.needsReconciliation
@@ -1234,6 +1366,7 @@ function bindOverviewActions() {
 }
 
 async function handleRoute() {
+  document.querySelector("#time-edit-dialog")?.close();
   unsubscribeSchedule?.();
   unsubscribeSchedule = null;
   const route = routeInfo();
@@ -1289,6 +1422,7 @@ function applyClosedState() {
   const status = document.querySelector("#schedule-status");
   if (status) status.textContent = closed ? "此約團已結束，填表已關閉；結果仍可查看與匯出。" : "";
   if (!closed) return;
+  document.querySelector("#time-edit-dialog")?.close();
   document.querySelector("#merge-confirm-dialog")?.close();
   document.querySelectorAll("#response-form input, #response-form textarea, #response-form button, .review-merged-response").forEach(node => { node.disabled = true; });
   if (!canManageSchedule) document.querySelectorAll(".delete-my-response").forEach(node => { node.disabled = true; });
