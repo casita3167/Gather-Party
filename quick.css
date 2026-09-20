@@ -285,7 +285,7 @@
   min-width:0;
 }
 
-/* Result cards: date, three-column player grid, then attendance summary. */
+/* Result cards: date, six-column player grid, then attendance summary. */
 .best-slot {
   display:flex;
   flex-direction:column;
@@ -306,7 +306,7 @@
 }
 .best-slot-players {
   display:grid;
-  grid-template-columns:repeat(3,27px);
+  grid-template-columns:repeat(6,27px);
   gap:6px;
   justify-content:start;
 }
