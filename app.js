@@ -70,12 +70,67 @@ function adminStyles() {
   </style>`;
 }
 
+
+function homeGuideMarkup() {
+  return `<style>
+    .home-guide{max-width:860px;margin:28px auto 0;padding:clamp(18px,4vw,30px);background:#fff;border:1px solid var(--line,#e2e5eb);border-radius:22px;line-height:1.8;overflow-wrap:anywhere}
+    .home-guide h2{margin:0 0 14px;font-size:clamp(1.3rem,3vw,1.7rem)}
+    .home-guide-notice{padding:14px 18px;background:var(--primary-soft,#efecff);border-radius:14px;margin-bottom:18px}
+    .home-guide-notice p{margin:6px 0}
+    .home-guide details{border-top:1px solid var(--line,#e2e5eb);padding:14px 0}
+    .home-guide summary{cursor:pointer;font-weight:800;color:var(--primary,#5446d6)}
+    .home-guide summary:focus-visible{outline:2px solid var(--primary,#5446d6);outline-offset:4px}
+    .home-guide li{margin:7px 0}.home-guide ol,.home-guide ul{padding-left:1.5em}
+    .home-guide details p:last-child{margin-bottom:0}
+  </style>
+  <section class="home-guide" aria-labelledby="home-guide-title">
+    <h2 id="home-guide-title">快速約團使用說明</h2>
+    <div class="home-guide-notice"><strong>免註冊、匿名填表，以目前裝置的瀏覽器紀錄辨識你</strong>
+      <p>不需要自行登入帳號。系統會透過這台裝置、這個瀏覽器保存的匿名身分，找回你建立的約團表與填寫紀錄。</p>
+      <p><strong>之後修改，請使用原本的裝置與同一個瀏覽器。</strong>換裝置、換瀏覽器、使用無痕模式或清除網站資料，可能無法直接帶回原本的紀錄。在 LINE／Discord 內開啟與改用外部瀏覽器，也可能被視為不同使用者。</p>
+      <p>約團資料儲存在網站上；清除瀏覽器資料不代表已刪除填表內容。建立者請另外保存私人管理連結。</p>
+    </div>
+    <details open><summary>第一次填寫：選日期、選時段、儲存</summary>
+      <ol><li>開啟建立者提供的「玩家填表連結」，輸入固定使用的玩家名稱。</li>
+      <li>在月曆點選一天或多天，也可使用「週一～週五／週末／全月」快速選取。</li>
+      <li>在「批次設定時段」選早上、下午、晚上，可複選；三個都選就是全天有空。實際時間以該表顯示為準。</li>
+      <li>當天可能有空但尚未確定，選「△」；當天無法參加，選「X」。△ 不計入確定成團人數。</li>
+      <li>需要時填寫備註，再按「儲存時間」。到「玩家時間一覽」確認送出的內容。</li></ol>
+      <p>不同日期可分批填寫：先選 10～12 號的晚上並儲存，再選 16～25 號的下午並儲存。儲存後紫色底會取消，這是正常的。</p>
+    </details>
+    <details><summary>送出後，如何修改自己的時間？</summary>
+      <ol><li>使用原本裝置與同一個瀏覽器，重新開啟同一張約團表的「玩家填表連結」。</li>
+      <li>選取要調整的日期與時段，或展開「逐日調整」修改原本的選擇。</li>
+      <li>修改完成後，按「儲存時間」。</li></ol>
+      <p>修改自己的填寫不需要私人管理連結。約團已結束或日期被鎖定時，請聯絡建立者。</p>
+    </details>
+    <details><summary>換裝置，或出現同名紀錄怎麼辦？</summary>
+      <p>請使用與原本<strong>完全相同的玩家名稱</strong>填寫並儲存。若出現同名確認視窗，逐日調整早上、下午、晚上、△ 或 X，再按「確認並儲存」。</p>
+      <p>如果先關閉視窗，可在「玩家時間一覽」自己的紀錄中按「確認合併內容」。同一團的不同玩家請使用不同名稱，避免資料被誤合併；若仍找不到原紀錄，請聯絡建立者協助。</p>
+    </details>
+    <details><summary>月曆標示與約團結果怎麼看？</summary>
+      <ul><li>紫色底：目前正在選取的日期；紫色日期數字與「今天」：今天，不代表已選取。</li>
+      <li>名字圓圈：已填寫該日期的玩家。其他人填過，你仍可選取。</li>
+      <li>編號圓圈：已儲存的日期批次。</li>
+      <li>紅色假期名稱：國定假日或連假；「🔒 不開放」：建立者鎖定的日期。</li>
+      <li>「玩家時間一覽」可查看日期、時段與備註；「可成團時段」顯示達到人數門檻的時段，△ 不計入確定人數。</li></ul>
+    </details>
+    <details><summary>建立者：分享連結與管理約團</summary>
+      <p>從「建立或查看約團表」建立新表，設定團務名稱、聯絡資訊、時段、成團人數與不開放日期。</p>
+      <ul><li><strong>玩家填表連結</strong>：分享給玩家，用來填寫與修改自己的時間。</li>
+      <li><strong>私人管理連結</strong>：請自行保存，只提供給需要管理權限的人；可編輯設定、鎖定日期及管理填寫紀錄。</li></ul>
+      <p>即使曾開過管理連結，再從玩家連結進入仍是普通填表模式。管理者可匯出結果、結束約團，結束後也可刪除約團表；刪除無法復原，請先保存需要的結果。</p>
+    </details>
+  </section>`;
+}
+
 function renderHome() {
   root.innerHTML = `<main class="shell">${nav(false)}
     <section class="portal-head"><span class="eyebrow">GATHER PARTY</span><h1>快速約團</h1><p>建立約團表，讓玩家從月曆填寫可跑日期與時段。</p></section>
     <section class="portal-grid single" aria-label="主要功能">
       <a class="portal-card quick" href="./quick.html"><span class="portal-icon portal-icon-image"><img src="./favicon.svg" alt="" aria-hidden="true"></span><div><h2>建立或查看約團表</h2><p>建立新的快速約團，或回到這台裝置曾經建立的約團表。</p><b>前往快速約團 →</b></div></a>
     </section>
+    ${homeGuideMarkup()}
     <a class="site-admin-lock" href="#admin" aria-label="管理後台"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14v3"/></svg></a>
   </main>`;
 }
