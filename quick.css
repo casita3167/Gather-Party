@@ -323,3 +323,38 @@
 .gm-claim input[type="checkbox"]{width:20px!important;height:20px;flex:0 0 20px;accent-color:#ad7800}
 .gm-player{background:#f5cf54!important;color:#4a3500!important;border-color:#fff2b4!important}
 .gm-name{color:#806000}
+
+/* 備註提醒：成團名單使用角標，玩家一覽在姓名旁顯示。 */
+.best-slot-player { position:relative; }
+.note-alert {
+  position:absolute;
+  top:-7px;
+  right:-7px;
+  width:16px;
+  height:16px;
+  display:grid;
+  place-items:center;
+  border:2px solid white;
+  border-radius:50%;
+  color:white;
+  background:#e5484d;
+  font-size:.65rem;
+  font-style:normal;
+  font-weight:950;
+  line-height:1;
+  box-shadow:0 1px 4px rgb(32 36 54 / .22);
+}
+.player-name-line { display:flex; min-width:0; align-items:center; gap:6px; }
+.player-note-alert {
+  width:20px;
+  height:20px;
+  display:inline-grid;
+  flex:0 0 20px;
+  place-items:center;
+  border-radius:50%;
+  color:white;
+  background:#e5484d;
+  font-size:.75rem;
+  font-weight:950;
+  line-height:1;
+}
