@@ -476,7 +476,7 @@ function gmClaimMarkup(isGM = false) {
   const claimed = uniqueSubmittedResponses(responses).filter(r => r.isGM === true);
   const limit = maxGMCount();
   const full = !isGM && claimed.length >= limit;
-  return `<label class="gm-claim"><input type="checkbox" name="isGM" ${isGM ? "checked" : ""} ${full ? "disabled" : ""}>我是本團主持人（GM，不計入玩家人數）</label><p class="muted">GM 以黃色標示，目前 ${claimed.length}／${limit} 位。勾選後請儲存；取消勾選並儲存即可回復玩家身分。${full ? " GM 名額已滿，如需增加請聯絡管理者。" : ""}</p>`;
+  return `<label class="gm-claim"><input type="checkbox" name="isGM" ${isGM ? "checked" : ""} ${full ? "disabled" : ""}>我是本團主持人（GM，不計入玩家人數）</label><p class="muted">GM 以黃色標示，勾選後請儲存，不計入玩家人數。</p>`;
 }
 function gmStatusText(players) {
   const gms = players.filter(p => p.isGM === true);
