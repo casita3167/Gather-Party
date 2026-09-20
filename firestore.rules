@@ -202,7 +202,7 @@ service cloud.firestore {
 
       match /responses/{userId} {
         allow read: if true;
-        allow create, update: if signedIn()
+        allow create: if signedIn()
           && request.auth.uid == userId
           && get(/databases/$(database)/documents/quickSchedules/$(scheduleId)).data.get('closed', false) == false
           && preservesLockedQuickDates(scheduleId)
@@ -213,6 +213,20 @@ service cloud.firestore {
           && request.resource.data.note.size() <= 500
           && request.resource.data.choices is map
           && request.resource.data.submitted == true;
+        allow update: if (signedIn()
+            && request.auth.uid == userId
+            && get(/databases/$(database)/documents/quickSchedules/$(scheduleId)).data.get('closed', false) == false
+            && preservesLockedQuickDates(scheduleId)
+            && request.resource.data.playerName is string
+            && request.resource.data.playerName.size() >= 1
+            && request.resource.data.playerName.size() <= 30
+            && request.resource.data.note is string
+            && request.resource.data.note.size() <= 500
+            && request.resource.data.choices is map
+            && request.resource.data.submitted == true)
+          || (isAdmin()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isGM', 'updatedAt'])
+            && request.resource.data.isGM is bool);
         allow delete: if signedIn()
           && (managesQuickSchedule(scheduleId)
             || (request.auth.uid == userId
