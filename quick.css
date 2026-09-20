@@ -317,3 +317,9 @@
   white-space:normal;
   overflow-wrap:anywhere;
 }
+
+/* GM is a host, not a player seat. */
+.gm-claim{display:flex!important;align-items:center;gap:10px;padding:12px;background:#fff7d6;border:1px solid #edcd67;border-radius:12px;color:#624800;line-height:1.5}
+.gm-claim input[type="checkbox"]{width:20px!important;height:20px;flex:0 0 20px;accent-color:#ad7800}
+.gm-player{background:#f5cf54!important;color:#4a3500!important;border-color:#fff2b4!important}
+.gm-name{color:#806000}
