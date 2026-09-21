@@ -67,6 +67,7 @@ function adminStyles() {
     .admin-calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}.admin-weekday{text-align:center;font-size:12px;color:var(--muted,#777);padding:4px}
     .admin-day{min-height:62px;padding:7px;border:1px solid var(--line,#ddd);border-radius:11px;background:var(--card,#fff);color:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between}.admin-day:hover{border-color:#7367e8}.admin-day.locked{background:rgba(111,94,224,.13);border-color:#7367e8}.admin-day.holiday:not(.locked){background:rgba(220,74,93,.06)}.admin-day small{font-size:10px;color:var(--muted,#777)}
     .admin-dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;padding-top:6px}
+    .admin-no-gm{display:flex!important;align-items:flex-start;gap:10px;padding:13px 14px;border:1px solid var(--line,#ddd);border-radius:12px;background:#f8f8fb}.admin-no-gm input{width:20px!important;height:20px;flex:0 0 20px;margin-top:2px}.admin-no-gm span{display:grid;gap:2px}.admin-no-gm small{color:var(--muted,#777);font-weight:500}
     @media(max-width:760px){.quick-admin-stats{grid-template-columns:1fr}.quick-admin-row{align-items:flex-start;flex-direction:column}.quick-admin-actions{width:100%;justify-content:flex-start}.quick-admin-search{max-width:none;width:100%}.admin-edit-grid,.admin-period-grid,.admin-gm-list{grid-template-columns:1fr}.admin-edit-card{padding:18px}.admin-day{min-height:52px;padding:5px}}
   </style>`;
 }
@@ -95,7 +96,7 @@ function homeGuideMarkup() {
     <details><summary>我是主持人（GM），如何認領？</summary>
       <p>填寫時間時勾選「我是本團主持人（GM，不計入玩家人數）」，再儲存。已送出者可按自己名字旁的「修改時間」，在彈窗中勾選並儲存；取消勾選並儲存即可回復玩家身分。</p>
       <p>GM 名字以黃色顯示，時間照常填寫，但不計入玩家人數。成團必須是同一天、同一時段 GM 確定有空，且玩家達到最低門檻。例如 4～6 人代表 1 位 GM 加上 4～6 位玩家；超額玩家資料仍保留。</p>
-      <p>沒有 GM 認領或 GM 選 △ 時，暫不判定成團。每張表預設最多 3 位 GM；至少一位 GM 在該時段確定有空即可。若需要更多 GM，請由私人管理連結提高上限。建立者／統計者不會自動成為 GM。</p>
+      <p>一般模式下，沒有 GM 認領或 GM 選 △ 時，暫不判定成團。每張表預設最多 3 位 GM；至少一位 GM 在該時段確定有空即可。若 GM 不參與這張表的時間填寫，建立者可啟用「沒有 GM 填表」，系統便只依玩家人數判定可成團時段。若需要更多 GM，請由私人管理連結提高上限。建立者／統計者不會自動成為 GM。</p>
     </details>
     <details open><summary>第一次填寫：選日期、選時段、儲存</summary>
       <ol><li>開啟建立者提供的「玩家填表連結」，輸入固定使用的玩家名稱。</li>
@@ -278,6 +279,7 @@ function openManageSchedule(schedule) {
     <label>給玩家的聯絡方式（選填）<input name="contact" maxlength="120" value="${escapeHtml(schedule.contact || "")}"></label>
     <label>給玩家的說明<textarea name="note" maxlength="800">${escapeHtml(schedule.note || "")}</textarea></label>
     <div class="admin-edit-grid"><label>最低成團人數<input name="minPlayers" type="number" min="1" max="20" value="${Number(schedule.minPlayers || 1)}" required></label><label>最多參加人數（選填）<input name="maxPlayers" type="number" min="1" max="20" value="${schedule.maxPlayers ? Number(schedule.maxPlayers) : ""}" placeholder="不設上限"></label><label>GM 人數上限<input name="maxGMs" type="number" min="1" max="20" value="${Math.min(20, Math.max(1, Number(schedule.maxGMs || 3)))}" required></label></div>
+    <label class="admin-no-gm"><input name="noGM" type="checkbox" ${schedule.requiresGM === false ? "checked" : ""}><span><b>沒有 GM 填表</b><small>啟用後，不要求 GM 提供時段，只比對玩家有空時間。</small></span></label>
     <section class="admin-gm-section"><div><h3>指定既有填表者為 GM</h3><p class="muted">可替更新前建立的約團表補上 GM；GM 不計入玩家人數。</p></div><div class="admin-gm-list">${responseRows.length ? responseRows.map(response => `<label class="admin-gm-option"><input type="checkbox" name="assignedGM" value="${escapeHtml(response.id)}" ${assignedGMIds.has(response.id) ? "checked" : ""}><span class="${assignedGMIds.has(response.id) ? "admin-gm-badge" : ""}">${escapeHtml(response.playerName || "未命名玩家")}</span></label>`).join("") : '<span class="muted">尚無玩家填表，之後可再回來指定。</span>'}</div></section>
     <div><h3>時段範圍</h3><div class="admin-period-grid"><label>早上<input name="morning" value="${escapeHtml(periods["早上"] || "09:00～12:00")}" required></label><label>下午<input name="afternoon" value="${escapeHtml(periods["下午"] || "13:00～18:00")}" required></label><label>晚上<input name="evening" value="${escapeHtml(periods["晚上"] || "20:30～24:00")}" required></label></div></div>
     <section class="admin-lock-section"><div class="admin-lock-head"><div><h3>不開放日期</h3><small id="admin-lock-count">已設定 ${lockedDates.size} 天</small></div><div class="admin-lock-nav"><button class="mini-button" type="button" data-prev>‹</button><b data-month></b><button class="mini-button" type="button" data-next>›</button></div></div><p class="muted">點日期即可切換鎖定。玩家原本的填寫會保留，但鎖定期間不會計入成團。</p><div data-calendar></div></section>
@@ -321,9 +323,10 @@ function openManageSchedule(schedule) {
     const minPlayers = Number(form.minPlayers.value);
     const maxPlayers = Number(form.maxPlayers.value || 0);
     const maxGMs = Math.min(20, Math.max(1, Number(form.maxGMs.value) || 3));
+    const requiresGM = !form.noGM.checked;
     const selectedGMIds = new Set([...form.querySelectorAll('input[name="assignedGM"]:checked')].map(input => input.value));
     if (maxPlayers && maxPlayers < minPlayers) return toast("最多參加人數不能少於最低成團人數。");
-    if (selectedGMIds.size > maxGMs) return toast(`目前選了 ${selectedGMIds.size} 位 GM，超過上限 ${maxGMs} 位。`);
+    if (requiresGM && selectedGMIds.size > maxGMs) return toast(`目前選了 ${selectedGMIds.size} 位 GM，超過上限 ${maxGMs} 位。`);
     saveButton.disabled = true;
     try {
       const changes = {
@@ -335,6 +338,7 @@ function openManageSchedule(schedule) {
         minPlayers,
         maxPlayers: maxPlayers || null,
         maxGMs,
+        requiresGM,
         periods: {
           "早上": form.morning.value.trim(),
           "下午": form.afternoon.value.trim(),
