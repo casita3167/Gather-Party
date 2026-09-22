@@ -4,8 +4,8 @@ import {
   signInWithEmailAndPassword, signOut
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import {
-  collection, doc, getDoc, getDocs, getFirestore,
-  serverTimestamp, updateDoc, writeBatch
+  addDoc, collection, deleteDoc, doc, getDoc, getDocs, getFirestore,
+  serverTimestamp, setDoc, updateDoc, writeBatch
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { holidayFor } from "./taiwan-holidays.js?v=20260912-1";
@@ -18,6 +18,38 @@ let db;
 let user = null;
 let role = null;
 let schedules = [];
+
+const SHORTENER_URL = "https://gather-party-link.gather-party.workers.dev";
+const SHORT_LINK_PREVIEW_VERSION = 3;
+
+function randomManagementToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function quickUrl(id) {
+  return `${new URL("./quick.html", location.href).href.split("#")[0]}#quick=${id}`;
+}
+
+function manageUrl(id, token) {
+  return `${new URL("./quick.html", location.href).href.split("#")[0]}#manage=${id}.${token}`;
+}
+
+async function createShortUrl(target, type, title = "") {
+  const response = await fetch(`${SHORTENER_URL}/api/shorten`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      target,
+      type,
+      title: title.trim().slice(0, 80),
+      description: type === "player" ? "打開月曆，填寫你可以跑團的日期與時段。" : ""
+    })
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.shortUrl) throw new Error(result.error || "短網址建立失敗");
+  return result.shortUrl;
+}
 
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, char => ({
@@ -68,6 +100,7 @@ function adminStyles() {
     .admin-day{min-height:62px;padding:7px;border:1px solid var(--line,#ddd);border-radius:11px;background:var(--card,#fff);color:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between}.admin-day:hover{border-color:#7367e8}.admin-day.locked{background:rgba(111,94,224,.13);border-color:#7367e8}.admin-day.holiday:not(.locked){background:rgba(220,74,93,.06)}.admin-day small{font-size:10px;color:var(--muted,#777)}
     .admin-dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;padding-top:6px}
     .admin-no-gm{display:flex!important;align-items:flex-start;gap:10px;padding:13px 14px;border:1px solid var(--line,#ddd);border-radius:12px;background:#f8f8fb}.admin-no-gm input{width:20px!important;height:20px;flex:0 0 20px;margin-top:2px}.admin-no-gm span{display:grid;gap:2px}.admin-no-gm small{color:var(--muted,#777);font-weight:500}
+    .admin-clone-modes{display:grid;gap:9px;padding:0;border:0;margin:0}.admin-clone-modes legend{font-weight:800;margin-bottom:7px}.admin-clone-mode{display:flex!important;align-items:flex-start;gap:10px;padding:13px 14px;border:1px solid var(--line,#ddd);border-radius:12px;background:#f8f8fb}.admin-clone-mode input{width:20px!important;height:20px;flex:0 0 20px;margin-top:2px;accent-color:#5547d8}.admin-clone-mode span{display:grid;gap:2px}.admin-clone-mode small{color:var(--muted,#777);font-weight:500}.admin-clone-message{min-height:1.4em;margin:0;color:var(--muted,#777)}
     @media(max-width:760px){.quick-admin-stats{grid-template-columns:1fr}.quick-admin-row{align-items:flex-start;flex-direction:column}.quick-admin-actions{width:100%;justify-content:flex-start}.quick-admin-search{max-width:none;width:100%}.admin-edit-grid,.admin-period-grid,.admin-gm-list{grid-template-columns:1fr}.admin-edit-card{padding:18px}.admin-day{min-height:52px;padding:5px}}
   </style>`;
 }
@@ -195,6 +228,7 @@ function scheduleRow(item) {
     <div class="quick-admin-actions">
       <a class="button secondary" href="./quick.html#quick=${item.id}" target="_blank" rel="noreferrer">查看約團</a>
       <button class="button manage-quick-admin" data-id="${item.id}" type="button">管理</button>
+      <button class="button secondary clone-quick-admin" data-id="${item.id}" type="button">沿用建立新約團</button>
       <button class="button reject delete-quick-admin" data-id="${item.id}" type="button">刪除</button>
     </div>
   </article>`;
@@ -208,6 +242,9 @@ function drawScheduleList(filter = "") {
   list.innerHTML = visible.length ? visible.map(scheduleRow).join("") : '<div class="quick-admin-empty">找不到符合條件的快速約團。</div>';
   list.querySelectorAll(".manage-quick-admin").forEach(button => {
     button.onclick = () => openManageSchedule(schedules.find(item => item.id === button.dataset.id));
+  });
+  list.querySelectorAll(".clone-quick-admin").forEach(button => {
+    button.onclick = () => openAdminCloneDialog(schedules.find(item => item.id === button.dataset.id));
   });
   list.querySelectorAll(".delete-quick-admin").forEach(button => {
     button.onclick = () => deleteQuickScheduleAdmin(schedules.find(item => item.id === button.dataset.id));
@@ -259,6 +296,125 @@ async function refreshSchedules() {
     toast("無法讀取快速約團表。");
   } finally {
     if (button) button.disabled = false;
+  }
+}
+
+function clonedChoices(choices = {}) {
+  return Object.fromEntries(Object.entries(choices).map(([date, values]) => [
+    date,
+    Array.isArray(values) ? [...values] : []
+  ]));
+}
+
+function openAdminCloneDialog(schedule) {
+  if (!schedule || !role || !user || user.isAnonymous) return;
+  const dialog = document.createElement("dialog");
+  dialog.className = "admin-edit-dialog";
+  dialog.innerHTML = `<form class="admin-edit-card" id="admin-clone-form">
+    <div class="admin-edit-head"><div><span class="eyebrow">NEW SCHEDULE</span><h2>沿用這張表建立新約團</h2><p>新表會有獨立的玩家連結與私人管理連結，不影響原表。</p></div><button class="icon-button" type="button" data-close aria-label="關閉">×</button></div>
+    <label>新團務名稱<input name="title" maxlength="80" value="${escapeHtml(`${schedule.title || "未命名約團"}`.slice(0, 73))}（新約團）" required></label>
+    <label>建立者／統計者<input name="coordinatorName" maxlength="40" value="${escapeHtml(schedule.coordinatorName || role.label || "")}" required></label>
+    <fieldset class="admin-clone-modes"><legend>沿用方式</legend>
+      <label class="admin-clone-mode"><input type="radio" name="cloneMode" value="full" checked><span><b>完整沿用時間一覽</b><small>複製玩家名稱、日期、時段、備註與 GM 身分。</small></span></label>
+      <label class="admin-clone-mode"><input type="radio" name="cloneMode" value="roster"><span><b>只沿用團員名單</b><small>保留玩家名稱與 GM 身分，清空日期、時段與備註。</small></span></label>
+    </fieldset>
+    <p class="admin-clone-message" role="status"></p>
+    <div class="admin-dialog-actions"><button class="button secondary" type="button" data-close>取消</button><button class="button" type="submit">建立新約團</button></div>
+  </form>`;
+  document.body.append(dialog);
+  dialog.querySelectorAll("[data-close]").forEach(button => button.onclick = () => dialog.close());
+  dialog.addEventListener("close", () => dialog.remove());
+  dialog.querySelector("#admin-clone-form").onsubmit = event => cloneScheduleFromAdmin(event, schedule);
+  dialog.showModal();
+}
+
+async function cloneScheduleFromAdmin(event, sourceSchedule) {
+  event.preventDefault();
+  if (!sourceSchedule || !role || !user || user.isAnonymous) return;
+  const form = event.currentTarget;
+  const submitButton = form.querySelector('button[type="submit"]');
+  const message = form.querySelector(".admin-clone-message");
+  const mode = form.cloneMode.value;
+  const token = randomManagementToken();
+  let newScheduleRef = null;
+  const createdResponseRefs = [];
+  submitButton.disabled = true;
+  message.textContent = "正在建立新約團表⋯";
+  try {
+    newScheduleRef = await addDoc(collection(db, "quickSchedules"), {
+      ownerUid: user.uid,
+      title: form.title.value.trim(),
+      coordinatorName: form.coordinatorName.value.trim(),
+      gmName: sourceSchedule.gmName || "",
+      maxGMs: Math.min(20, Math.max(1, Number(sourceSchedule.maxGMs || 3))),
+      requiresGM: sourceSchedule.requiresGM !== false,
+      contact: sourceSchedule.contact || "",
+      note: sourceSchedule.note || "",
+      minPlayers: Number(sourceSchedule.minPlayers || 1),
+      maxPlayers: sourceSchedule.maxPlayers ? Number(sourceSchedule.maxPlayers) : null,
+      dates: Array.isArray(sourceSchedule.dates) ? [...sourceSchedule.dates] : [],
+      lockedDates: { ...(sourceSchedule.lockedDates || {}) },
+      periods: { ...(sourceSchedule.periods || {}) },
+      closed: false,
+      clonedFrom: sourceSchedule.id,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+
+    const sourceResponses = (sourceSchedule.responses || []).filter(response => response.submitted);
+    const fullCopy = mode === "full";
+    await Promise.all(sourceResponses.map(async response => {
+      const responseRef = doc(db, "quickSchedules", newScheduleRef.id, "responses", response.id);
+      createdResponseRefs.push(responseRef);
+      const data = {
+        playerName: response.playerName || "未命名玩家",
+        isGM: response.isGM === true,
+        note: fullCopy ? (response.note || "") : "",
+        choices: fullCopy ? clonedChoices(response.choices || {}) : {},
+        batchGroups: fullCopy ? { ...(response.batchGroups || {}) } : {},
+        submitted: fullCopy,
+        updatedAt: serverTimestamp()
+      };
+      if (fullCopy && Array.isArray(response.reconciledResponseIds)) {
+        data.reconciledResponseIds = [...response.reconciledResponseIds];
+        data.reconciledAt = serverTimestamp();
+      }
+      await setDoc(responseRef, data);
+    }));
+
+    let playerShortUrl = "";
+    let managerShortUrl = "";
+    try {
+      [playerShortUrl, managerShortUrl] = await Promise.all([
+        createShortUrl(quickUrl(newScheduleRef.id), "player", form.title.value.trim()),
+        createShortUrl(manageUrl(newScheduleRef.id, token), "manager", form.title.value.trim())
+      ]);
+    } catch (shortenerError) {
+      console.error(shortenerError);
+    }
+
+    await setDoc(doc(db, "quickSchedules", newScheduleRef.id, "managementTokens", token), {
+      createdAt: serverTimestamp(),
+      ...(managerShortUrl ? {
+        shortUrl: managerShortUrl,
+        shortTitle: form.title.value.trim(),
+        previewVersion: SHORT_LINK_PREVIEW_VERSION
+      } : {})
+    });
+    if (playerShortUrl) {
+      await updateDoc(newScheduleRef, {
+        shortPlayerUrl: playerShortUrl,
+        shortPlayerTitle: form.title.value.trim(),
+        shortPlayerPreviewVersion: SHORT_LINK_PREVIEW_VERSION
+      });
+    }
+    location.href = managerShortUrl || manageUrl(newScheduleRef.id, token);
+  } catch (error) {
+    console.error(error);
+    message.textContent = "建立失敗，請確認新版 Firestore Rules 已發布後再試。";
+    submitButton.disabled = false;
+    await Promise.all(createdResponseRefs.map(ref => deleteDoc(ref).catch(() => {})));
+    if (newScheduleRef) await deleteDoc(newScheduleRef).catch(() => {});
   }
 }
 
