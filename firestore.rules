@@ -174,6 +174,17 @@ service cloud.firestore {
         : !request.resource.data.choices.keys().hasAny(lockedQuickDates(scheduleId));
     }
 
+    function validQuickResponseData() {
+      return request.resource.data.playerName is string
+        && request.resource.data.playerName.size() >= 1
+        && request.resource.data.playerName.size() <= 30
+        && request.resource.data.note is string
+        && request.resource.data.note.size() <= 500
+        && request.resource.data.choices is map
+        && request.resource.data.submitted is bool
+        && request.resource.data.isGM is bool;
+    }
+
     match /quickSchedules/{scheduleId} {
       allow get: if true;
       allow list: if isAdmin()
@@ -203,16 +214,12 @@ service cloud.firestore {
       match /responses/{userId} {
         allow read: if true;
         allow create: if signedIn()
-          && request.auth.uid == userId
-          && get(/databases/$(database)/documents/quickSchedules/$(scheduleId)).data.get('closed', false) == false
-          && preservesLockedQuickDates(scheduleId)
-          && request.resource.data.playerName is string
-          && request.resource.data.playerName.size() >= 1
-          && request.resource.data.playerName.size() <= 30
-          && request.resource.data.note is string
-          && request.resource.data.note.size() <= 500
-          && request.resource.data.choices is map
-          && request.resource.data.submitted == true;
+          && validQuickResponseData()
+          && ((request.auth.uid == userId
+              && get(/databases/$(database)/documents/quickSchedules/$(scheduleId)).data.get('closed', false) == false
+              && preservesLockedQuickDates(scheduleId)
+              && request.resource.data.submitted == true)
+            || managesQuickSchedule(scheduleId));
         allow update: if (signedIn()
             && request.auth.uid == userId
             && get(/databases/$(database)/documents/quickSchedules/$(scheduleId)).data.get('closed', false) == false
