@@ -401,3 +401,37 @@
 }
 .no-gm-toggle span { display:grid; gap:2px; }
 .no-gm-toggle small { color:var(--muted); font-weight:500; line-height:1.5; }
+
+#clone-schedule-action { margin:14px 0; }
+.clone-schedule-card { max-width:620px; }
+.clone-mode-options {
+  display:grid;
+  gap:9px;
+  margin:0;
+  padding:0;
+  border:0;
+}
+.clone-mode-options legend {
+  margin-bottom:7px;
+  font-weight:850;
+}
+.clone-mode-options label {
+  display:flex!important;
+  align-items:flex-start;
+  gap:10px;
+  margin:0;
+  padding:12px 13px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:#f8f8fb;
+}
+.clone-mode-options input {
+  width:19px!important;
+  height:19px;
+  flex:0 0 19px;
+  margin-top:2px;
+  accent-color:var(--primary);
+}
+.clone-mode-options span { display:grid; gap:2px; }
+.clone-mode-options small { color:var(--muted); font-weight:500; line-height:1.5; }
+.clone-schedule-message { min-height:1.5em; color:var(--red); font-weight:750; }
