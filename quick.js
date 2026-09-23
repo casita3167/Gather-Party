@@ -205,7 +205,7 @@ function localizedChoiceSummary(date, values = [], ranges = schedule?.periods ||
 function timeZoneNoticeMarkup() {
   const source = scheduleTimeZone();
   const local = viewerTimeZone();
-  return `<aside class="time-zone-notice"><b>🌐 時間會依你的裝置時區顯示</b><span>月曆日期基準：${escapeHtml(timeZoneName(source))}。你的時區：${escapeHtml(timeZoneName(local))}${source === local ? "（與團務時區相同）" : "；各時段已自動換算"}。</span></aside>`;
+  return `<aside class="time-zone-notice"><b>🌐 時間會依你的裝置時區顯示</b><span>月曆日期基準：${escapeHtml(timeZoneName(source))}。</span><span>你的時區：${escapeHtml(timeZoneName(local))}。</span></aside>`;
 }
 
 function renderCreate() {
