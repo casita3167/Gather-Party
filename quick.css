@@ -26,7 +26,8 @@
 .quick-create-form { width:100%; max-width:760px; margin:0 auto; }
 .quick-create-form section,.quick-create-form label,.schedule-banner>div { min-width:0; }
 .quick-create-form .form-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); }
-.quick-create-form input,.quick-create-form textarea { min-width:0; max-width:100%; }
+.quick-create-form input,.quick-create-form textarea,.quick-create-form select { min-width:0; max-width:100%; }
+.quick-create-form select,.dialog-card select { width:100%; padding:11px 12px; border:1px solid var(--line); border-radius:10px; color:var(--ink); background:white; font:inherit; }
 .quick-card { padding:22px; border:1px solid var(--line); border-radius:22px; background:white; box-shadow:var(--shadow); }
 .quick-card h2 { margin:0 0 5px; }
 .quick-card>p { margin:0 0 18px; color:var(--muted); }
@@ -57,6 +58,9 @@
 .period-setting { display:grid; grid-template-columns:55px 1fr; gap:10px; align-items:center; }
 .period-setting span { font-weight:850; }
 .quick-note { padding:12px; border-radius:11px; color:#475467; background:#f6f7f9; font-size:.84rem; line-height:1.6; }
+.time-zone-notice { display:flex; align-items:flex-start; justify-content:space-between; gap:10px 18px; flex-wrap:wrap; margin:0 0 16px; padding:12px 14px; border:1px solid #d9d5f8; border-radius:12px; color:#3f378f; background:var(--primary-soft); line-height:1.5; }
+.time-zone-notice b { white-space:nowrap; }
+.time-zone-notice span { color:#5f6680; font-size:.86rem; }
 .quick-back { display:inline-flex; align-items:center; min-height:42px; margin:0 0 12px; padding:9px 13px; border:1px solid #d9d5f8; border-radius:11px; color:var(--primary); background:var(--primary-soft); font-weight:850; }
 .quick-back:hover { color:white; border-color:var(--primary); background:var(--primary); }
 .schedule-banner { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; padding:24px; margin-bottom:16px; border-radius:22px; color:white; background:#171c30; }
@@ -95,6 +99,7 @@
 .choice-row { display:grid; grid-template-columns:minmax(130px,1fr) repeat(5,minmax(40px,60px)); gap:6px; align-items:center; padding:10px; border:1px solid var(--line); border-radius:13px; background:#fcfcfd; }
 .choice-date b,.choice-date span { display:block; }
 .choice-date span { margin-top:3px; color:var(--muted); font-size:.75rem; }
+.choice-date small { display:block; margin-top:5px; color:#5146b8; font-size:.68rem; line-height:1.4; overflow-wrap:anywhere; }
 .choice-button { min-height:43px; padding:6px; border:1px solid var(--line); border-radius:9px; color:var(--muted); background:white; font-weight:850; }
 .choice-button:hover { border-color:#bbb5ef; }
 .choice-button.selected { color:white; border-color:var(--primary); background:var(--primary); }
