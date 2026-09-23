@@ -21,6 +21,23 @@ let schedules = [];
 
 const SHORTENER_URL = "https://gather-party-link.gather-party.workers.dev";
 const SHORT_LINK_PREVIEW_VERSION = 3;
+const DEFAULT_TIME_ZONE = "Asia/Taipei";
+const TIME_ZONE_OPTIONS = [
+  ["Asia/Taipei", "台灣（UTC+8）"], ["Asia/Tokyo", "日本（UTC+9）"],
+  ["Asia/Seoul", "韓國（UTC+9）"], ["Asia/Hong_Kong", "香港（UTC+8）"],
+  ["Asia/Singapore", "新加坡（UTC+8）"], ["Australia/Sydney", "澳洲雪梨"],
+  ["Europe/London", "英國倫敦"], ["Europe/Paris", "歐洲中部"],
+  ["America/New_York", "美國紐約"], ["America/Chicago", "美國芝加哥"],
+  ["America/Denver", "美國丹佛"], ["America/Los_Angeles", "美國洛杉磯"]
+];
+
+function timeZoneOptionsMarkup(selected = DEFAULT_TIME_ZONE) {
+  const values = new Set(TIME_ZONE_OPTIONS.map(([value]) => value));
+  const extra = selected && !values.has(selected) ? [[selected, selected]] : [];
+  return [...TIME_ZONE_OPTIONS, ...extra].map(([value, label]) =>
+    `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(label)}・${escapeHtml(value)}</option>`
+  ).join("");
+}
 
 function randomManagementToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(24));
@@ -92,7 +109,7 @@ function adminStyles() {
     .admin-edit-dialog::backdrop{background:rgba(18,16,32,.55);backdrop-filter:blur(3px)}
     .admin-edit-card{display:grid;gap:16px;background:var(--card,#fff);color:inherit;padding:24px;border-radius:22px;box-shadow:0 24px 80px rgba(0,0,0,.22)}
     .admin-edit-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.admin-edit-head h2{margin:3px 0 0}.admin-edit-head p{margin:5px 0 0;color:var(--muted,#777)}
-    .admin-edit-card label{display:grid;gap:7px;font-weight:650}.admin-edit-card input,.admin-edit-card textarea{width:100%;box-sizing:border-box;padding:11px 13px;border:1px solid var(--line,#ddd);border-radius:12px;background:var(--card,#fff);color:inherit;font:inherit}.admin-edit-card textarea{min-height:88px;resize:vertical}
+    .admin-edit-card label{display:grid;gap:7px;font-weight:650}.admin-edit-card input,.admin-edit-card textarea,.admin-edit-card select{width:100%;box-sizing:border-box;padding:11px 13px;border:1px solid var(--line,#ddd);border-radius:12px;background:var(--card,#fff);color:inherit;font:inherit}.admin-edit-card textarea{min-height:88px;resize:vertical}
     .admin-edit-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.admin-period-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
     .admin-gm-section{display:grid;gap:10px;padding:14px;border:1px solid var(--line,#eee);border-radius:14px}.admin-gm-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.admin-gm-option{display:flex!important;grid-template-columns:none!important;align-items:center;gap:9px;padding:10px;border:1px solid var(--line,#ddd);border-radius:10px;font-weight:700!important}.admin-gm-option input{width:18px!important;height:18px;accent-color:#ad7800}.admin-gm-badge{color:#806000}
     .admin-lock-section{display:grid;gap:10px;padding-top:8px;border-top:1px solid var(--line,#eee)}.admin-lock-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.admin-lock-nav{display:flex;gap:6px;align-items:center}.admin-lock-nav button{min-width:38px}
@@ -355,6 +372,7 @@ async function cloneScheduleFromAdmin(event, sourceSchedule) {
       dates: Array.isArray(sourceSchedule.dates) ? [...sourceSchedule.dates] : [],
       lockedDates: { ...(sourceSchedule.lockedDates || {}) },
       periods: { ...(sourceSchedule.periods || {}) },
+      timeZone: sourceSchedule.timeZone || DEFAULT_TIME_ZONE,
       closed: false,
       clonedFrom: sourceSchedule.id,
       createdAt: serverTimestamp(),
@@ -434,6 +452,7 @@ function openManageSchedule(schedule) {
     <div class="admin-edit-grid"><label>建立者／統計者<input name="coordinatorName" maxlength="40" value="${escapeHtml(schedule.coordinatorName || "")}" required></label><label>實際 GM<input name="gmName" maxlength="40" value="${escapeHtml(schedule.gmName || "")}" placeholder="尚未確定可留白"></label></div>
     <label>給玩家的聯絡方式（選填）<input name="contact" maxlength="120" value="${escapeHtml(schedule.contact || "")}"></label>
     <label>給玩家的說明<textarea name="note" maxlength="800">${escapeHtml(schedule.note || "")}</textarea></label>
+    <label>團務時區<select name="timeZone" required>${timeZoneOptionsMarkup(schedule.timeZone || DEFAULT_TIME_ZONE)}</select><small>玩家的時段會依各自裝置時區自動換算。</small></label>
     <div class="admin-edit-grid"><label>最低成團人數<input name="minPlayers" type="number" min="1" max="20" value="${Number(schedule.minPlayers || 1)}" required></label><label>最多參加人數（選填）<input name="maxPlayers" type="number" min="1" max="20" value="${schedule.maxPlayers ? Number(schedule.maxPlayers) : ""}" placeholder="不設上限"></label><label>GM 人數上限<input name="maxGMs" type="number" min="1" max="20" value="${Math.min(20, Math.max(1, Number(schedule.maxGMs || 3)))}" required></label></div>
     <label class="admin-no-gm"><input name="noGM" type="checkbox" ${schedule.requiresGM === false ? "checked" : ""}><span><b>沒有 GM 填表</b><small>啟用後，不要求 GM 提供時段，只比對玩家有空時間。</small></span></label>
     <section class="admin-gm-section"><div><h3>指定既有填表者為 GM</h3><p class="muted">可替更新前建立的約團表補上 GM；GM 不計入玩家人數。</p></div><div class="admin-gm-list">${responseRows.length ? responseRows.map(response => `<label class="admin-gm-option"><input type="checkbox" name="assignedGM" value="${escapeHtml(response.id)}" ${assignedGMIds.has(response.id) ? "checked" : ""}><span class="${assignedGMIds.has(response.id) ? "admin-gm-badge" : ""}">${escapeHtml(response.playerName || "未命名玩家")}</span></label>`).join("") : '<span class="muted">尚無玩家填表，之後可再回來指定。</span>'}</div></section>
@@ -491,6 +510,7 @@ function openManageSchedule(schedule) {
         gmName: form.gmName.value.trim(),
         contact: form.contact.value.trim(),
         note: form.note.value.trim(),
+        timeZone: form.timeZone.value || DEFAULT_TIME_ZONE,
         minPlayers,
         maxPlayers: maxPlayers || null,
         maxGMs,
