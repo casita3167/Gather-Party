@@ -1730,7 +1730,7 @@ function overviewMarkup(players) {
     const noteAlert = hasNote ? `<span class="player-note-alert" title="${escapeHtml(`備註：${player.note.trim()}`)}" aria-label="這位玩家有備註">!</span>` : "";
     return `<article class="player-availability"><header><div class="player-name-line"><h3 class="${participantIsGM(player) ? "gm-name" : ""}">${escapeHtml(player.playerName)}${participantIsGM(player) ? "（GM）" : ""}</h3>${noteAlert}</div>${isMine && !schedule?.closed ? `<button type="button" class="button secondary edit-my-time">修改時間</button>` : ""}${deleteButton}</header>${mergeNotice}${hasNote ? `<p class="response-note">${escapeHtml(player.note.trim())}</p>` : ""}<div>${groupedChoices.map(group => {
       const localTime = localizedGroupSummary(group);
-      return `<span class="player-date-choice"><span class="player-date-label"><b>團務日期：${escapeHtml(compactDateRangeLabel(group.start, group.end))}</b>${localTime ? `<small>你的時間：${escapeHtml(localTime)}</small>` : ""}</span><i class="choice-mark ${group.isUnavailable ? "no" : ""}">${escapeHtml(group.label)}</i></span>`;
+      return `<span class="player-date-choice"><span class="player-date-label ${localTime ? "has-local-time" : ""}" ${localTime ? `tabindex="0" data-local-time="你的時間：${escapeHtml(localTime)}" aria-label="團務日期 ${escapeHtml(compactDateRangeLabel(group.start, group.end))}，你的時間：${escapeHtml(localTime)}"` : ""}><b>團務日期：${escapeHtml(compactDateRangeLabel(group.start, group.end))}</b></span><i class="choice-mark ${group.isUnavailable ? "no" : ""}">${escapeHtml(group.label)}</i></span>`;
     }).join("")}</div></article>`;
   }).join("")}</div>`;
 }
