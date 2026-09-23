@@ -129,8 +129,10 @@
 .player-availability h3 { margin:0; }
 .player-availability > div { display:grid; gap:6px; }
 .player-date-choice { display:flex; justify-content:space-between; align-items:center; gap:10px; }
-.player-date-label { min-width:0; display:grid; gap:3px; }
-.player-date-label small { color:#5146b8; font-size:.72rem; line-height:1.45; overflow-wrap:anywhere; }
+.player-date-label { position:relative; min-width:0; display:grid; gap:3px; }
+.player-date-label.has-local-time { cursor:help; border-bottom:1px dashed #8b82d8; outline:none; }
+.player-date-label.has-local-time::after { content:attr(data-local-time); position:absolute; z-index:30; left:0; bottom:calc(100% + 8px); width:max-content; max-width:min(320px,calc(100vw - 44px)); padding:8px 10px; border-radius:9px; color:white; background:#292441; box-shadow:0 8px 24px rgba(25,20,54,.2); font-size:.76rem; font-weight:700; line-height:1.5; white-space:normal; overflow-wrap:anywhere; opacity:0; visibility:hidden; pointer-events:none; transform:translateY(4px); transition:opacity .15s ease,transform .15s ease,visibility .15s; }
+.player-date-label.has-local-time:hover::after,.player-date-label.has-local-time:focus::after,.player-date-label.has-local-time:focus-visible::after { opacity:1; visibility:visible; transform:translateY(0); }
 .player-date-choice i { flex:0 0 auto; font-style:normal; }
 .delete-my-response { width:30px; height:30px; display:grid; place-items:center; flex:0 0 auto; border:1px solid #efc7c1; border-radius:50%; color:var(--red); background:white; font-size:1.15rem; font-weight:900; line-height:1; }
 .delete-my-response:hover { color:white; background:var(--red); }
