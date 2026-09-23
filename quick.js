@@ -13,6 +13,15 @@ const DAY_NAMES = ["日", "一", "二", "三", "四", "五", "六"];
 const PERIOD_KEYS = ["早上", "下午", "晚上"];
 const SHORTENER_URL = "https://gather-party-link.gather-party.workers.dev";
 const SHORT_LINK_PREVIEW_VERSION = 3;
+const DEFAULT_TIME_ZONE = "Asia/Taipei";
+const TIME_ZONE_OPTIONS = [
+  ["Asia/Taipei", "台灣（UTC+8）"], ["Asia/Tokyo", "日本（UTC+9）"],
+  ["Asia/Seoul", "韓國（UTC+9）"], ["Asia/Hong_Kong", "香港（UTC+8）"],
+  ["Asia/Singapore", "新加坡（UTC+8）"], ["Australia/Sydney", "澳洲雪梨"],
+  ["Europe/London", "英國倫敦"], ["Europe/Paris", "歐洲中部"],
+  ["America/New_York", "美國紐約"], ["America/Chicago", "美國芝加哥"],
+  ["America/Denver", "美國丹佛"], ["America/Los_Angeles", "美國洛杉磯"]
+];
 
 let auth;
 let db;
@@ -101,6 +110,104 @@ function dateLabel(date, short = false) {
   return short ? `${month}/${day}（${weekday}）` : `${year} 年 ${month} 月 ${day} 日（週${weekday}）`;
 }
 
+function viewerTimeZone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TIME_ZONE;
+}
+
+function scheduleTimeZone() {
+  return schedule?.timeZone || DEFAULT_TIME_ZONE;
+}
+
+function timeZoneName(timeZone) {
+  const known = TIME_ZONE_OPTIONS.find(([value]) => value === timeZone)?.[1];
+  if (known) return known;
+  try {
+    const name = new Intl.DateTimeFormat("zh-TW", { timeZone, timeZoneName: "short" })
+      .formatToParts(new Date()).find(part => part.type === "timeZoneName")?.value;
+    return name ? `${timeZone}（${name}）` : timeZone;
+  } catch {
+    return timeZone;
+  }
+}
+
+function timeZoneOptionsMarkup(selected = DEFAULT_TIME_ZONE) {
+  const values = new Set(TIME_ZONE_OPTIONS.map(([value]) => value));
+  const extra = selected && !values.has(selected) ? [[selected, selected]] : [];
+  return [...TIME_ZONE_OPTIONS, ...extra].map(([value, label]) =>
+    `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(label)}・${escapeHtml(value)}</option>`
+  ).join("");
+}
+
+function parsePeriodRange(value = "") {
+  const match = String(value).match(/(\d{1,2}):(\d{2})\s*[～~–—-]\s*(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  return { startHour: Number(match[1]), startMinute: Number(match[2]), endHour: Number(match[3]), endMinute: Number(match[4]) };
+}
+
+function addDateDays(date, days) {
+  const [year, month, day] = date.split("-").map(Number);
+  const next = new Date(Date.UTC(year, month - 1, day + days));
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(next.getUTCDate()).padStart(2, "0")}`;
+}
+
+function zonedDateTimeEpoch(date, hour, minute, timeZone) {
+  const extraDays = Math.floor(hour / 24);
+  const normalizedDate = addDateDays(date, extraDays);
+  const [year, month, day] = normalizedDate.split("-").map(Number);
+  const normalizedHour = ((hour % 24) + 24) % 24;
+  const desired = Date.UTC(year, month - 1, day, normalizedHour, minute);
+  let guess = desired;
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"
+  });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const parts = Object.fromEntries(formatter.formatToParts(new Date(guess)).map(part => [part.type, part.value]));
+    const represented = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), Number(parts.second));
+    guess += desired - represented;
+  }
+  return guess;
+}
+
+function localizedPeriodInfo(date, period, ranges = schedule?.periods || {}) {
+  const raw = ranges[period] || "";
+  const parsed = parsePeriodRange(raw);
+  if (!parsed) return { label: raw, startEpoch: null, endEpoch: null };
+  const sourceZone = scheduleTimeZone();
+  const startEpoch = zonedDateTimeEpoch(date, parsed.startHour, parsed.startMinute, sourceZone);
+  const startMinutes = parsed.startHour * 60 + parsed.startMinute;
+  const endMinutes = parsed.endHour * 60 + parsed.endMinute;
+  let endDate = endMinutes <= startMinutes ? addDateDays(date, 1) : date;
+  let endHour = parsed.endHour;
+  if (parsed.endHour === 24) { endDate = addDateDays(date, 1); endHour = 0; }
+  const endEpoch = zonedDateTimeEpoch(endDate, endHour, parsed.endMinute, sourceZone);
+  const localZone = viewerTimeZone();
+  const start = new Intl.DateTimeFormat("zh-TW", {
+    timeZone: localZone, month: "numeric", day: "numeric", weekday: "short",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+  }).format(new Date(startEpoch));
+  const end = new Intl.DateTimeFormat("zh-TW", {
+    timeZone: localZone, month: "numeric", day: "numeric",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+  }).format(new Date(endEpoch));
+  return { label: `${start}～${end}`, startEpoch, endEpoch };
+}
+
+function localizedSlotLabel(date, period, ranges = schedule?.periods || {}) {
+  return `${localizedPeriodInfo(date, period, ranges).label}・${period}`;
+}
+
+function localizedChoiceSummary(date, values = [], ranges = schedule?.periods || {}) {
+  const periods = PERIOD_KEYS.filter(period => values.includes(period));
+  return periods.map(period => `${period} ${localizedPeriodInfo(date, period, ranges).label}`).join("／");
+}
+
+function timeZoneNoticeMarkup() {
+  const source = scheduleTimeZone();
+  const local = viewerTimeZone();
+  return `<aside class="time-zone-notice"><b>🌐 時間會依你的裝置時區顯示</b><span>月曆日期基準：${escapeHtml(timeZoneName(source))}。你的時區：${escapeHtml(timeZoneName(local))}${source === local ? "（與團務時區相同）" : "；各時段已自動換算"}。</span></aside>`;
+}
+
 function renderCreate() {
   draftLockedDates = new Set();
   root.innerHTML = `<main class="quick-shell">${brand()}
@@ -112,6 +219,7 @@ function renderCreate() {
         <div class="form-grid"><label>建立者／統計者<input name="coordinatorName" maxlength="40" required placeholder="你的名稱"></label><label>預定 GM（選填）<input name="gmName" maxlength="40" placeholder="實際 GM 仍須由填表者認領"></label></div>
         <label>給玩家的聯絡方式（選填）<input name="contact" maxlength="120" placeholder="Discord、LINE 或其他聯絡方式"></label>
         <label>給玩家的說明<textarea name="note" maxlength="800" placeholder="預計遊玩的系統、時數或其他提醒"></textarea></label>
+        <label>團務時區<select name="timeZone" required>${timeZoneOptionsMarkup(DEFAULT_TIME_ZONE)}</select><small>所有日期以此時區為共同基準；玩家看到的時段會依自己的裝置時區自動換算。</small></label>
         <div class="form-grid"><label>最低成團人數<input name="minPlayers" type="number" min="1" max="20" value="4" required></label><label>最多參加人數（選填）<input name="maxPlayers" type="number" min="1" max="20" value="6" placeholder="不設上限"></label></div><label class="no-gm-toggle"><input name="noGM" type="checkbox"><span><b>沒有 GM 填表</b><small>啟用後，不要求 GM 提供時段，只比對玩家有空時間。</small></span></label><small class="muted">超過參加上限仍保留時段，由團務管理者協調名單。</small>
         <h3>時段範圍</h3><div class="period-settings"><label class="period-setting"><span>早上</span><input name="morning" value="09:00～12:00" required></label><label class="period-setting"><span>下午</span><input name="afternoon" value="13:00～18:00" required></label><label class="period-setting"><span>晚上</span><input name="evening" value="20:30～24:00" required></label></div>
         <p class="quick-note">玩家只會看到「早上／下午／晚上／△ 不確定／X」五個按鈕；滑鼠移到時段上即可查看你設定的範圍。</p>
@@ -221,6 +329,7 @@ async function createSchedule(event) {
       requiresGM: !form.noGM.checked,
       contact: form.contact.value.trim(),
       note: form.note.value.trim(),
+      timeZone: form.timeZone.value || DEFAULT_TIME_ZONE,
       minPlayers,
       maxPlayers: maxPlayers || null,
       dates: [],
@@ -648,6 +757,7 @@ async function cloneCurrentSchedule(event) {
       dates: Array.isArray(schedule.dates) ? [...schedule.dates] : [],
       lockedDates: { ...(schedule.lockedDates || {}) },
       periods: { ...(schedule.periods || {}) },
+      timeZone: scheduleTimeZone(),
       closed: false,
       clonedFrom: schedule.id,
       createdAt: serverTimestamp(),
@@ -721,6 +831,7 @@ function renderSchedule(mineData) {
     <a class="quick-back" href="./quick.html" aria-label="回到建立快速約團頁面">← 上一頁：建立快速約團</a>
     <section class="schedule-banner"><div><span class="eyebrow">QUICK SCHEDULER</span><h1>${escapeHtml(schedule.title)}</h1><p>建立者／統計者：${escapeHtml(schedule.coordinatorName)}${schedule.gmName ? `・實際 GM：${escapeHtml(schedule.gmName)}` : ""}</p></div>${schedule.contact ? `<div class="contact-card"><span>給玩家的聯絡方式</span><b>${escapeHtml(schedule.contact)}</b></div>` : ""}</section>
     ${schedule.note ? `<p class="quick-note">${escapeHtml(schedule.note)}</p>` : ""}
+    ${timeZoneNoticeMarkup()}
     <p id="schedule-status" role="status"></p><div class="management-actions"><button class="button secondary" id="export-results" type="button">匯出約團結果</button>${canManageSchedule ? `<button class="button reject" id="close-schedule" type="button">結束約團</button>` : ""}</div>
     <div class="schedule-grid"><form id="response-form" class="quick-card"><h2>填寫我的時間</h2><p>先從月曆點選你要填寫的日期，再選早上、下午、晚上、△ 不確定或 X。△ 表示當天可能有空、時段未定，不計入確定成團人數。儲存後仍可隨時回來修改日期。</p>${periodLegendMarkup(periodRanges)}<label>玩家名稱<input name="playerName" maxlength="30" value="${escapeHtml(mineData?.playerName || localStorage.getItem("gather-party-player") || "")}" required></label>${gmClaimMarkup(responses.find(r => r.id === user?.uid)?.isGM === true)}<div class="date-picker-head"><h3 id="response-month-title">${responseMonthCursor.getFullYear()} 年 ${responseMonthCursor.getMonth() + 1} 月</h3><div class="date-picker-nav"><button class="mini-button" id="response-prev" type="button">‹</button><button class="mini-button" id="response-today" type="button">今</button><button class="mini-button" id="response-next" type="button">›</button></div></div><div class="date-preset-bar" aria-label="快速選擇本月日期"><span>快速選日期</span><button class="date-preset-button" type="button" data-date-preset="weekdays">週一～週五</button><button class="date-preset-button" type="button" data-date-preset="weekends">週末</button><button class="date-preset-button" type="button" data-date-preset="all">全月</button><button class="date-preset-button clear" type="button" data-date-preset="clear">清除本月</button></div><div id="response-calendar">${responseCalendarMarkup()}</div><section class="batch-choice-panel"><div><h3>批次設定時段</h3><p id="batch-choice-count">目前批次 0 天</p><small>套用時段後按「儲存時間」，日期會收進編號批次；接著即可繼續選下一批。</small></div><div class="batch-choice-actions">${PERIOD_KEYS.map(period => `<button class="choice-button batch-choice-button" type="button" data-batch-choice="${period}">${period}</button>`).join("")}<button class="choice-button uncertain batch-choice-button" type="button" data-batch-choice="△" title="當天可能有空，時段尚未確定" aria-label="不確定">△</button><button class="choice-button no batch-choice-button" type="button" data-batch-choice="X">X</button><button class="choice-button clear batch-choice-button" type="button" data-batch-choice="clear">清除時段</button></div></section><details class="choice-details" id="choice-details" ${choices.size <= 3 ? "open" : ""}><summary>逐日調整 <span id="choice-summary-count">${choices.size} 天</span></summary><div class="choice-list" id="response-choice-list">${responseChoiceListMarkup(periodRanges)}</div></details><label>備註<textarea name="note" maxlength="500" placeholder="例如：晚上九點後才有空、這天可能需要再確認">${escapeHtml(mineData?.note || "")}</textarea></label><div class="quick-form-actions"><span class="muted">至少選擇一個日期，且每個日期都要選時段、△ 不確定或 X</span><button class="button" type="submit">儲存時間</button></div></form>
       <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${countedPlayers(submitted).length} 位玩家已填寫・${escapeHtml(gmStatusText(submitted))}・${playerRangeLabel()}</p>${bestSlotControlsMarkup(submitted)}<div class="best-slots" id="best-slots">${bestMarkup(best, countedPlayers(submitted).length, bestSlotPlayerKey ? "這位玩家目前沒有符合成團條件的時段。" : "")}</div><div id="clone-schedule-action">${cloneScheduleActionMarkup()}</div><label>玩家填表連結<div class="share-box"><input id="player-link" readonly value="${escapeHtml(playerLink)}" aria-label="玩家填表短網址"><button class="button secondary" id="copy-quick" type="button">複製</button></div></label>${canManageSchedule ? `<div class="management-box"><h3>私人管理連結</h3><p>換裝置時用這條隨機短網址取回管理權限，請勿傳給玩家。</p>${privateLink ? `<div class="share-box"><input id="manager-link" readonly value="${escapeHtml(privateLink)}" aria-label="私人管理短網址"><button class="button secondary" id="copy-manager" type="button">複製</button></div>` : '<p class="muted">私人管理連結建立中。</p>'}<div class="management-actions"><button class="button secondary full" id="lock-schedule-dates" type="button">🔒 設定不開放日期</button><button class="button secondary full" id="edit-current-schedule" type="button">編輯約團設定</button><button class="button reject full" id="delete-current-schedule" type="button">刪除這張約團表</button></div></div>` : ""}</aside>
@@ -834,7 +945,7 @@ function openEditScheduleDialog() {
   const dialog = document.createElement("dialog");
   dialog.id = "edit-schedule-dialog";
   const periods = schedule.periods || {};
-  dialog.innerHTML = `<form method="dialog" class="dialog-card" id="edit-schedule-form"><div class="dialog-head"><div><span class="eyebrow">MANAGEMENT</span><h2>編輯約團設定</h2></div><button class="icon-button" type="button" data-close aria-label="關閉">×</button></div><label>團務名稱<input name="title" maxlength="80" value="${escapeHtml(schedule.title)}" required></label><div class="form-grid"><label>建立者／統計者<input name="coordinatorName" maxlength="40" value="${escapeHtml(schedule.coordinatorName)}" required></label><label>預定 GM（選填）<input name="gmName" maxlength="40" value="${escapeHtml(schedule.gmName || "")}" placeholder="實際 GM 仍須由填表者認領"></label></div><label>給玩家的聯絡方式（選填）<input name="contact" maxlength="120" value="${escapeHtml(schedule.contact || "")}"></label><label>給玩家的說明<textarea name="note" maxlength="800">${escapeHtml(schedule.note || "")}</textarea></label><div class="form-grid"><label>最低成團人數<input name="minPlayers" type="number" min="1" max="20" value="${Number(schedule.minPlayers || 1)}" required></label><label>最多參加人數（選填）<input name="maxPlayers" type="number" min="1" max="20" value="${schedule.maxPlayers ? Number(schedule.maxPlayers) : ""}" placeholder="不設上限"></label><label>GM 人數上限<input name="maxGMs" type="number" min="1" max="20" value="${maxGMCount()}" required></label></div><label class="no-gm-toggle"><input name="noGM" type="checkbox" ${scheduleRequiresGM() ? "" : "checked"}><span><b>沒有 GM 填表</b><small>啟用後，不要求 GM 提供時段，只比對玩家有空時間。</small></span></label><small class="muted">超過參加上限仍保留時段，由團務管理者協調名單。</small><h3>時段範圍</h3><div class="period-settings"><label class="period-setting"><span>早上</span><input name="morning" value="${escapeHtml(periods["早上"] || "09:00～12:00")}" required></label><label class="period-setting"><span>下午</span><input name="afternoon" value="${escapeHtml(periods["下午"] || "13:00～18:00")}" required></label><label class="period-setting"><span>晚上</span><input name="evening" value="${escapeHtml(periods["晚上"] || "20:30～24:00")}" required></label></div><div class="dialog-actions"><button class="button secondary" type="button" data-close>取消</button><button class="button" type="submit">儲存設定</button></div></form>`;
+  dialog.innerHTML = `<form method="dialog" class="dialog-card" id="edit-schedule-form"><div class="dialog-head"><div><span class="eyebrow">MANAGEMENT</span><h2>編輯約團設定</h2></div><button class="icon-button" type="button" data-close aria-label="關閉">×</button></div><label>團務名稱<input name="title" maxlength="80" value="${escapeHtml(schedule.title)}" required></label><div class="form-grid"><label>建立者／統計者<input name="coordinatorName" maxlength="40" value="${escapeHtml(schedule.coordinatorName)}" required></label><label>預定 GM（選填）<input name="gmName" maxlength="40" value="${escapeHtml(schedule.gmName || "")}" placeholder="實際 GM 仍須由填表者認領"></label></div><label>給玩家的聯絡方式（選填）<input name="contact" maxlength="120" value="${escapeHtml(schedule.contact || "")}"></label><label>給玩家的說明<textarea name="note" maxlength="800">${escapeHtml(schedule.note || "")}</textarea></label><label>團務時區<select name="timeZone" required>${timeZoneOptionsMarkup(scheduleTimeZone())}</select><small>變更後，既有日期仍以新時區解讀，請先確認玩家時間。</small></label><div class="form-grid"><label>最低成團人數<input name="minPlayers" type="number" min="1" max="20" value="${Number(schedule.minPlayers || 1)}" required></label><label>最多參加人數（選填）<input name="maxPlayers" type="number" min="1" max="20" value="${schedule.maxPlayers ? Number(schedule.maxPlayers) : ""}" placeholder="不設上限"></label><label>GM 人數上限<input name="maxGMs" type="number" min="1" max="20" value="${maxGMCount()}" required></label></div><label class="no-gm-toggle"><input name="noGM" type="checkbox" ${scheduleRequiresGM() ? "" : "checked"}><span><b>沒有 GM 填表</b><small>啟用後，不要求 GM 提供時段，只比對玩家有空時間。</small></span></label><small class="muted">超過參加上限仍保留時段，由團務管理者協調名單。</small><h3>時段範圍</h3><div class="period-settings"><label class="period-setting"><span>早上</span><input name="morning" value="${escapeHtml(periods["早上"] || "09:00～12:00")}" required></label><label class="period-setting"><span>下午</span><input name="afternoon" value="${escapeHtml(periods["下午"] || "13:00～18:00")}" required></label><label class="period-setting"><span>晚上</span><input name="evening" value="${escapeHtml(periods["晚上"] || "20:30～24:00")}" required></label></div><div class="dialog-actions"><button class="button secondary" type="button" data-close>取消</button><button class="button" type="submit">儲存設定</button></div></form>`;
   root.appendChild(dialog);
   dialog.showModal();
   dialog.querySelectorAll("[data-close]").forEach(button => button.onclick = () => dialog.close());
@@ -870,6 +981,7 @@ function openEditScheduleDialog() {
       gmName: form.gmName.value.trim(),
       contact: form.contact.value.trim(),
       note: form.note.value.trim(),
+      timeZone: form.timeZone.value || DEFAULT_TIME_ZONE,
       minPlayers,
       maxPlayers: maxPlayers || null,
       maxGMs,
@@ -917,7 +1029,7 @@ function openEditScheduleDialog() {
 
 function periodLegendMarkup(ranges) {
   const defaults = { "早上": "09:00～12:00", "下午": "13:00～18:00", "晚上": "20:30～24:00" };
-  return `<div class="period-legend" aria-label="時段範圍與填表符號說明">${PERIOD_KEYS.map(period => `<span><b>${period}</b>${escapeHtml(ranges[period] || defaults[period])}</span>`).join("")}<span title="當天可能有空，時段尚未確定"><b>△</b>不確定</span><span title="當天無法參加"><b>X</b>無法</span></div>`;
+  return `<div class="period-legend" aria-label="團務基準時段與填表符號說明">${PERIOD_KEYS.map(period => `<span title="團務基準時區：${escapeHtml(timeZoneName(scheduleTimeZone()))}"><b>${period}</b>${escapeHtml(ranges[period] || defaults[period])}</span>`).join("")}<span title="當天可能有空，時段尚未確定"><b>△</b>不確定</span><span title="當天無法參加"><b>X</b>無法</span></div>`;
 }
 
 function bestSlotPlayersMarkup(players = []) {
@@ -931,7 +1043,7 @@ function bestSlotPlayersMarkup(players = []) {
 
 function bestMarkup(items, total, emptyMessage = "") {
   return items.length
-    ? items.slice(0, 10).map(item => `<div class="best-slot"><span class="best-slot-time">${escapeHtml(dateLabel(item.date, true))}・${escapeHtml(item.period)}</span><div class="best-slot-availability">${bestSlotPlayersMarkup([...item.availableGMs, ...item.players])}<small>${scheduleRequiresGM() ? `${item.availableGMs.length} 位 GM 有空・` : ""}${item.count}／${total} 位玩家${Number(schedule.maxPlayers) > 0 && item.count > Number(schedule.maxPlayers) ? `・可成團，最多 ${Number(schedule.maxPlayers)} 人參加` : ""}</small></div></div>`).join("")
+    ? items.slice(0, 10).map(item => `<div class="best-slot"><span class="best-slot-time">${escapeHtml(localizedSlotLabel(item.date, item.period))}</span><div class="best-slot-availability">${bestSlotPlayersMarkup([...item.availableGMs, ...item.players])}<small>${scheduleRequiresGM() ? `${item.availableGMs.length} 位 GM 有空・` : ""}${item.count}／${total} 位玩家${Number(schedule.maxPlayers) > 0 && item.count > Number(schedule.maxPlayers) ? `・可成團，最多 ${Number(schedule.maxPlayers)} 人參加` : ""}</small></div></div>`).join("")
     : `<div class="empty small">${escapeHtml(emptyMessage || (scheduleRequiresGM() ? "目前沒有 GM 有空且玩家達到最低人數的時段。" : "目前沒有玩家達到最低成團人數的時段。"))}</div>`;
 }
 
@@ -1153,7 +1265,11 @@ function bindResponseDayButtons(ranges) {
 
 function choiceRow(date, ranges) {
   const selected = choices.get(date) || new Set();
-  return `<div class="choice-row"><div class="choice-date"><b>${escapeHtml(dateLabel(date))}</b><span>${escapeHtml(holidayFor(date) || "一般日期")}</span></div>${PERIOD_KEYS.map(period => `<button class="choice-button ${selected.has(period) ? "selected" : ""}" type="button" data-date="${date}" data-choice="${period}" title="${escapeHtml(ranges[period] || "")}" aria-pressed="${selected.has(period)}">${period}</button>`).join("")}<button class="choice-button uncertain ${selected.has("△") ? "selected" : ""}" type="button" data-date="${date}" data-choice="△" title="當天可能有空，時段尚未確定" aria-label="不確定" aria-pressed="${selected.has("△")}">△</button><button class="choice-button no ${selected.has("X") ? "selected" : ""}" type="button" data-date="${date}" data-choice="X" aria-pressed="${selected.has("X")}">X</button></div>`;
+  const localSummary = localizedChoiceSummary(date, [...selected], ranges);
+  return `<div class="choice-row"><div class="choice-date"><b>${escapeHtml(dateLabel(date))}</b><span>${escapeHtml(holidayFor(date) || "一般日期")}</span>${localSummary ? `<small>你的時間：${escapeHtml(localSummary)}</small>` : ""}</div>${PERIOD_KEYS.map(period => {
+    const local = localizedPeriodInfo(date, period, ranges).label;
+    return `<button class="choice-button ${selected.has(period) ? "selected" : ""}" type="button" data-date="${date}" data-choice="${period}" title="你的時間：${escapeHtml(local)}" aria-label="${escapeHtml(period + "，你的時間 " + local)}" aria-pressed="${selected.has(period)}">${period}</button>`;
+  }).join("")}<button class="choice-button uncertain ${selected.has("△") ? "selected" : ""}" type="button" data-date="${date}" data-choice="△" title="當天可能有空，時段尚未確定" aria-label="不確定" aria-pressed="${selected.has("△")}">△</button><button class="choice-button no ${selected.has("X") ? "selected" : ""}" type="button" data-date="${date}" data-choice="X" aria-pressed="${selected.has("X")}">X</button></div>`;
 }
 
 function bindChoiceButtons() {
@@ -1748,7 +1864,9 @@ function scheduleResultsText() {
     "建立者：" + (schedule.coordinatorName || ""),
     "狀態：" + (schedule.closed ? "已結束" : "填表中"),
     playerRangeLabel(), "",
-    "時段：" + PERIOD_KEYS.map(p => p + " " + (schedule.periods?.[p] || "")).join("／"),
+    "團務基準時區：" + timeZoneName(scheduleTimeZone()),
+    "匯出顯示時區：" + timeZoneName(viewerTimeZone()),
+    "時段（團務基準）：" + PERIOD_KEYS.map(p => p + " " + (schedule.periods?.[p] || "")).join("／"),
     requiresGM
       ? "GM 不計入玩家人數；須 GM 有空且玩家達門檻才能成團。△ 不確定與不開放日期不計入成團。"
       : "GM 未參與填表；只依玩家人數判定成團。△ 不確定與不開放日期不計入成團。",
@@ -1757,7 +1875,11 @@ function scheduleResultsText() {
   if (!slots.length) lines.push("目前沒有達到最低成團人數的時段。");
   for (const slot of slots) {
     const gmText = requiresGM ? "＋GM：" + slot.availableGMs.map(gm => gm.playerName).join("、") : "";
-    lines.push(dateLabel(slot.date, true) + "・" + slot.period + "（" + slot.count + " 位玩家" + gmText + "）：" + slot.players.map(p => p.playerName).join("、"));
+    const local = localizedPeriodInfo(slot.date, slot.period);
+    const discordTime = local.startEpoch && local.endEpoch
+      ? "｜Discord：<t:" + Math.floor(local.startEpoch / 1000) + ":F>～<t:" + Math.floor(local.endEpoch / 1000) + ":t>"
+      : "";
+    lines.push(localizedSlotLabel(slot.date, slot.period) + "（" + slot.count + " 位玩家" + gmText + "）：" + slot.players.map(p => p.playerName).join("、") + discordTime);
   }
   lines.push("", "【玩家填寫結果】");
   for (const player of participants) {
