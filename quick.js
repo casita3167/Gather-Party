@@ -202,6 +202,36 @@ function localizedChoiceSummary(date, values = [], ranges = schedule?.periods ||
   return periods.map(period => `${period} ${localizedPeriodInfo(date, period, ranges).label}`).join("／");
 }
 
+function viewerDateLabel(epoch) {
+  return new Intl.DateTimeFormat("zh-TW", {
+    timeZone: viewerTimeZone(), month: "numeric", day: "numeric", weekday: "short"
+  }).format(new Date(epoch));
+}
+
+function viewerClockLabel(epoch) {
+  return new Intl.DateTimeFormat("zh-TW", {
+    timeZone: viewerTimeZone(), hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+  }).format(new Date(epoch));
+}
+
+function localizedGroupSummary(group) {
+  const periods = PERIOD_KEYS.filter(period => group.values?.includes(period));
+  return periods.map(period => {
+    const first = localizedPeriodInfo(group.start, period);
+    if (!first.startEpoch || !first.endEpoch) return `${period} ${first.label}`;
+    if (group.start === group.end) return `${period} ${first.label}`;
+    const last = localizedPeriodInfo(group.end, period);
+    const firstStart = viewerClockLabel(first.startEpoch);
+    const firstEnd = viewerClockLabel(first.endEpoch);
+    const lastStart = viewerClockLabel(last.startEpoch);
+    const lastEnd = viewerClockLabel(last.endEpoch);
+    if (firstStart === lastStart && firstEnd === lastEnd) {
+      return `${period} ${viewerDateLabel(first.startEpoch)}～${viewerDateLabel(last.startEpoch)}，每日 ${firstStart}～${firstEnd}`;
+    }
+    return `${period} ${first.label}；末日 ${last.label}（期間遇時區切換）`;
+  }).join("；");
+}
+
 function timeZoneNoticeMarkup() {
   const source = scheduleTimeZone();
   const local = viewerTimeZone();
@@ -1445,6 +1475,7 @@ function groupedPlayerChoices(choiceObject = {}, savedGroups = {}) {
         start: date,
         end: date,
         label,
+        values: [...values],
         batchNumber,
         isUnavailable: values.includes("X")
       });
@@ -1697,7 +1728,10 @@ function overviewMarkup(players) {
       : "";
     const hasNote = Boolean(player.note?.trim());
     const noteAlert = hasNote ? `<span class="player-note-alert" title="${escapeHtml(`備註：${player.note.trim()}`)}" aria-label="這位玩家有備註">!</span>` : "";
-    return `<article class="player-availability"><header><div class="player-name-line"><h3 class="${participantIsGM(player) ? "gm-name" : ""}">${escapeHtml(player.playerName)}${participantIsGM(player) ? "（GM）" : ""}</h3>${noteAlert}</div>${isMine && !schedule?.closed ? `<button type="button" class="button secondary edit-my-time">修改時間</button>` : ""}${deleteButton}</header>${mergeNotice}${hasNote ? `<p class="response-note">${escapeHtml(player.note.trim())}</p>` : ""}<div>${groupedChoices.map(group => `<span class="player-date-choice"><b>${escapeHtml(compactDateRangeLabel(group.start, group.end))}</b><i class="choice-mark ${group.isUnavailable ? "no" : ""}">${escapeHtml(group.label)}</i></span>`).join("")}</div></article>`;
+    return `<article class="player-availability"><header><div class="player-name-line"><h3 class="${participantIsGM(player) ? "gm-name" : ""}">${escapeHtml(player.playerName)}${participantIsGM(player) ? "（GM）" : ""}</h3>${noteAlert}</div>${isMine && !schedule?.closed ? `<button type="button" class="button secondary edit-my-time">修改時間</button>` : ""}${deleteButton}</header>${mergeNotice}${hasNote ? `<p class="response-note">${escapeHtml(player.note.trim())}</p>` : ""}<div>${groupedChoices.map(group => {
+      const localTime = localizedGroupSummary(group);
+      return `<span class="player-date-choice"><span class="player-date-label"><b>團務日期：${escapeHtml(compactDateRangeLabel(group.start, group.end))}</b>${localTime ? `<small>你的時間：${escapeHtml(localTime)}</small>` : ""}</span><i class="choice-mark ${group.isUnavailable ? "no" : ""}">${escapeHtml(group.label)}</i></span>`;
+    }).join("")}</div></article>`;
   }).join("")}</div>`;
 }
 
@@ -1885,7 +1919,11 @@ function scheduleResultsText() {
   lines.push("", "【玩家填寫結果】");
   for (const player of participants) {
     lines.push(player.playerName + (participantIsGM(player) ? "（GM，不計入玩家人數）" : "") + (player.needsReconciliation ? "（同名合併待確認）" : ""));
-    for (const group of groupedPlayerChoices(player.choices, player.batchGroups)) lines.push("  " + compactDateRangeLabel(group.start, group.end) + "：" + group.label);
+    for (const group of groupedPlayerChoices(player.choices, player.batchGroups)) {
+      const localTime = localizedGroupSummary(group);
+      lines.push("  團務日期：" + compactDateRangeLabel(group.start, group.end) + "：" + group.label);
+      if (localTime) lines.push("    你的時間：" + localTime);
+    }
     if (player.note) lines.push("  備註：" + player.note);
     lines.push("");
   }
