@@ -129,7 +129,9 @@
 .player-availability h3 { margin:0; }
 .player-availability > div { display:grid; gap:6px; }
 .player-date-choice { display:flex; justify-content:space-between; align-items:center; gap:10px; }
-.player-date-choice i { font-style:normal; }
+.player-date-label { min-width:0; display:grid; gap:3px; }
+.player-date-label small { color:#5146b8; font-size:.72rem; line-height:1.45; overflow-wrap:anywhere; }
+.player-date-choice i { flex:0 0 auto; font-style:normal; }
 .delete-my-response { width:30px; height:30px; display:grid; place-items:center; flex:0 0 auto; border:1px solid #efc7c1; border-radius:50%; color:var(--red); background:white; font-size:1.15rem; font-weight:900; line-height:1; }
 .delete-my-response:hover { color:white; background:var(--red); }
 .delete-my-response:disabled { opacity:.5; cursor:not-allowed; }
