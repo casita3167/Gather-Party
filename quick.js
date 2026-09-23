@@ -49,9 +49,9 @@ function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 }
 
-function taiwanTodayKey() {
+function taiwanTodayKey(timeZone = DEFAULT_TIME_ZONE) {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit"
+    timeZone, year: "numeric", month: "2-digit", day: "2-digit"
   }).formatToParts(new Date());
   const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
@@ -414,6 +414,7 @@ async function openSchedule(id, routeManagementToken = "") {
           schedule.lockedDates = latest.data().lockedDates || {};
           schedule.maxGMs = latest.data().maxGMs || 3;
           schedule.requiresGM = latest.data().requiresGM !== false;
+          schedule.timeZone = latest.data().timeZone || DEFAULT_TIME_ZONE;
           restoreLockedChoices();
           refreshChoiceControls(schedule.periods || {});
           refreshOverview();
@@ -1081,7 +1082,7 @@ function responseCalendarMarkup() {
   const month = responseMonthCursor.getMonth();
   const first = (new Date(year, month, 1).getDay() + 6) % 7;
   const total = new Date(year, month + 1, 0).getDate();
-  const today = taiwanTodayKey();
+  const today = taiwanTodayKey(scheduleTimeZone());
   const cells = [];
   for (let i = 0; i < first; i++) cells.push('<button class="quick-day outside" tabindex="-1"></button>');
   for (let day = 1; day <= total; day++) {
@@ -1568,7 +1569,7 @@ function openTimeEditor(player) {
     else draft.delete(date);
   }
   const selected = new Set();
-  let cursor = (Object.keys(player.choices || {}).sort()[0] || taiwanTodayKey()).slice(0,7);
+  let cursor = (Object.keys(player.choices || {}).sort()[0] || taiwanTodayKey(scheduleTimeZone())).slice(0,7);
   let busy = false;
   const dialog = document.createElement("dialog");
   dialog.id = "time-edit-dialog";
