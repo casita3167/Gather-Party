@@ -1592,7 +1592,26 @@ function openTimeEditor(player) {
   const scheduleId = schedule.id, uid = user.uid;
   const own = responses.find(item => item.id === uid);
   if (!own) return;
-  const fingerprint = value => JSON.stringify([value.isGM === true, value.choices || {}, value.note || "", value.updatedAt?.toMillis?.() || 0]);
+  const fingerprint = value => {
+    const order = [...PERIOD_KEYS, "△", "X"];
+    const normalizedChoices = Object.fromEntries(
+      Object.keys(value.choices || {}).sort().map(date => [
+        date,
+        order.filter(choice => (value.choices?.[date] || []).includes(choice))
+      ])
+    );
+    const normalizedBatchGroups = Object.fromEntries(
+      Object.entries(value.batchGroups || {}).sort(([a], [b]) => a.localeCompare(b))
+    );
+    return JSON.stringify({
+      playerName: String(value.playerName || "").trim(),
+      isGM: value.isGM === true,
+      note: value.note || "",
+      choices: normalizedChoices,
+      batchGroups: normalizedBatchGroups,
+      submitted: value.submitted === true
+    });
+  };
   const original = fingerprint(own);
   const draft = new Map(Object.entries(player.choices || {}).map(([date, values]) => [date, new Set(values)]));
   for (const date of Object.keys(schedule.lockedDates || {})) {
