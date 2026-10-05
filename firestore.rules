@@ -30,6 +30,28 @@ service cloud.firestore {
             || exists(/databases/$(database)/documents/quickSchedules/$(scheduleId)/managers/$(request.auth.uid))));
     }
 
+    // Visitors may submit feedback; only site administrators can read it.
+    match /feedbackReports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['type', 'title', 'details', 'contact', 'reporterUid', 'status', 'createdAt'])
+        && request.resource.data.reporterUid == request.auth.uid
+        && request.resource.data.type in ['bug', 'feature']
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 1
+        && request.resource.data.title.size() <= 80
+        && request.resource.data.details is string
+        && request.resource.data.details.size() >= 1
+        && request.resource.data.details.size() <= 2000
+        && request.resource.data.contact is string
+        && request.resource.data.contact.size() <= 120
+        && request.resource.data.status == 'new'
+        && request.resource.data.createdAt == request.time;
+      allow read: if isAdmin();
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status in ['new', 'done'];
+    }
+
     match /admins/{userId} {
       allow get: if signedIn() && request.auth.uid == userId;
       allow list, write: if isAdmin();
