@@ -528,3 +528,10 @@
 
 #participant-hover-tooltip { position:fixed; z-index:2147483647; pointer-events:none; max-width:min(320px,calc(100vw - 16px)); padding:7px 10px; border-radius:8px; background:#24243b; color:#fff; box-shadow:0 4px 14px #20233430; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 #participant-hover-tooltip[hidden] { display:none; }
+
+/* Keep confirmed participants distinct, even in muted scheduled slots. */
+.best-slot.scheduled-slot { color:#686b78; background:#f0f1f4; border-color:#d4d6de; }
+.best-slot .best-slot-player.unselected-participant { opacity:.3; }
+.best-slot .best-slot-player.selected-participant,
+.best-slot .best-slot-player.selected-participant[data-booked] { opacity:1; outline:3px solid #168354; outline-offset:2px; cursor:default; }
+.best-slot .best-slot-player.selected-participant:not([data-booked]) { cursor:pointer; }
