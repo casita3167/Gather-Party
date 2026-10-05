@@ -475,7 +475,7 @@
 .best-slot-player-options input:checked + .player-filter-avatar::after { content:"✓"; position:absolute; right:-4px; bottom:-3px; display:grid; place-items:center; width:13px; height:13px; border:1px solid white; border-radius:50%; color:white; background:#168354; font-size:9px; }
 .best-slot-player-options input:focus-visible + .player-filter-avatar { outline:2px solid var(--primary); outline-offset:4px; }
 .best-slot-player-options .player-filter-person:hover .player-filter-avatar { border-color:var(--primary); }
-.best-slot-player-options .player-filter-name { display:block; max-width:100%; margin:0; color:var(--ink); font-size:.68rem; font-weight:750; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.best-slot-player-options .player-filter-name { display:none; max-width:100%; margin:0; color:var(--ink); font-size:.68rem; font-weight:750; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
 .scheduled-groups-section { margin:20px 0; }
 .scheduled-groups-section h3 { margin:0 0 10px; }
