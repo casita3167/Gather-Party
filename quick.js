@@ -2302,7 +2302,9 @@ function exportScheduleResults() {
 }
 
 function showUpdateAnnouncement() {
-  // 下次公告請更換 id 與 items；首頁及約團頁須使用相同版本。
+  // 僅在有重要功能變更且公告草稿經確認後啟用；兩頁使用相同版本。
+  const enabled = false;
+  if (!enabled) return;
   const id = "20261005-14";
   const items = ["指定玩家與已成團名單改為精簡圓圈，滑鼠懸停可查看全名。", "已成團卡片可收合，管理者可修改團名；時段結束後顯示已結團。", "新增更新公告；勾選已看過後，此裝置不再顯示同一版公告。"];
   const key = "gather-party:announcement-seen";
@@ -2311,7 +2313,7 @@ function showUpdateAnnouncement() {
   const dialog = document.createElement("dialog");
   dialog.id = "update-announcement";
   dialog.setAttribute("aria-labelledby", "update-announcement-title");
-  dialog.innerHTML = '<style>#update-announcement{box-sizing:border-box;width:min(480px,calc(100vw - 32px));max-height:85dvh;overflow:auto;border:1px solid #dedbea;border-radius:20px;padding:24px;color:#202334;background:white}#update-announcement::backdrop{background:#20233466}#update-announcement h2{margin:0 0 16px;font-size:1.25rem}#update-announcement li{margin:10px 0;line-height:1.65;overflow-wrap:anywhere}#update-announcement label{display:flex;gap:8px;align-items:center;margin:20px 0}#update-announcement footer{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}#update-announcement button{padding:10px 16px;border:1px solid #dedbea;border-radius:10px;cursor:pointer}#update-announcement button:last-child{background:#5547d8;color:white}#update-announcement button:disabled{opacity:.45;cursor:default}</style><h2 id="update-announcement-title">更新公告｜2026/10/05</h2><ul></ul><label><input type="checkbox">我已看過本次更新</label><footer><button type="button">稍後再看</button><button type="button" disabled>確認</button></footer>';
+  dialog.innerHTML = '<style>#update-announcement{box-sizing:border-box;width:min(480px,calc(100vw - 32px));max-height:85dvh;overflow:auto;border:1px solid #dedbea;border-radius:20px;padding:24px;color:#202334;background:white}#update-announcement::backdrop{background:#20233466}#update-announcement h2{margin:0 0 16px;font-size:1.25rem}#update-announcement li{margin:10px 0;line-height:1.65;overflow-wrap:anywhere}#update-announcement label{display:flex;justify-content:flex-start;gap:8px;align-items:center;margin:20px 0;font-size:.95rem;font-weight:500;line-height:1.5;text-align:left}#update-announcement input[type="checkbox"]{box-sizing:border-box;appearance:auto;width:18px;height:18px;min-width:18px;min-height:18px;max-width:18px;max-height:18px;flex:0 0 18px;margin:0;padding:0;accent-color:#5547d8;cursor:pointer}#update-announcement footer{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}#update-announcement button{padding:10px 16px;border:1px solid #dedbea;border-radius:10px;cursor:pointer}#update-announcement button:last-child{background:#5547d8;color:white}#update-announcement button:disabled{opacity:.45;cursor:default}</style><h2 id="update-announcement-title">更新公告｜2026/10/05</h2><ul></ul><label><input type="checkbox">我已看過本次更新</label><footer><button type="button">稍後再看</button><button type="button" disabled>確認</button></footer>';
   items.forEach(text => { const li = document.createElement("li"); li.textContent = text; dialog.querySelector("ul").append(li); });
   const checkbox = dialog.querySelector("input");
   const [later, confirm] = dialog.querySelectorAll("button");
