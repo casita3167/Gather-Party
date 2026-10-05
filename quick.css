@@ -476,3 +476,12 @@
 .best-slot-player-options input:focus-visible + .player-filter-avatar { outline:2px solid var(--primary); outline-offset:4px; }
 .best-slot-player-options .player-filter-person:hover .player-filter-avatar { border-color:var(--primary); }
 .best-slot-player-options .player-filter-name { display:block; max-width:100%; margin:0; color:var(--ink); font-size:.78rem; font-weight:750; line-height:1.35; overflow-wrap:anywhere; }
+
+.scheduled-groups-section { margin:20px 0; }
+.scheduled-groups-section h3 { margin:0 0 10px; }
+.scheduled-group { margin:10px 0; padding:12px; border:1px solid #bce3ce; border-radius:12px; background:var(--green-soft); }
+.scheduled-group header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.scheduled-group header button { margin:0; }
+.scheduled-group p { margin:7px 0 10px; overflow-wrap:anywhere; }
+.scheduled-group small { display:block; margin-top:10px; color:var(--muted); overflow-wrap:anywhere; }
+.best-slot-player-button[data-booked] { opacity:.4; cursor:default; }
