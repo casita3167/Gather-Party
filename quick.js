@@ -44,6 +44,7 @@ let managementShortTitle = "";
 let managementPreviewVersion = 0;
 let bestSlotSort = "count";
 let scheduledGroupStatusTimer = null;
+const expandedScheduledGroups = new Set();
 let bestSlotExpiryTimer = null;
 let bestSlotPlayerKeys = new Set();
 
@@ -1147,10 +1148,23 @@ function scheduledGroupHasEnded(group, now = Date.now()) {
   return now >= scheduledGroupEndEpoch(group);
 }
 
+function scheduledGroupTitle(group, index) {
+  return group.title?.trim() || `第 ${index + 1} 團`;
+}
+
 function scheduledGroupsMarkup() {
   const groups = Array.isArray(schedule?.scheduledGroups) ? schedule.scheduledGroups : [];
   if (!groups.length) return '<div class="empty small">尚未排定團務。選取玩家達到上限即可存成一團。</div>';
-  return groups.map((group, index) => `<article class="scheduled-group ${scheduledGroupHasEnded(group) ? "ended" : ""}"><header><b>${scheduledGroupHasEnded(group) ? "已結束" : `第 ${index + 1} 團`}</b>${canManageSchedule ? `<button type="button" class="best-slot-filter-clear" data-cancel-group="${escapeHtml(group.id)}">取消此團</button>` : ""}</header><p>${escapeHtml(localizedSlotLabel(group.date, group.period, group.periods || schedule.periods, group.timeZone || scheduleTimeZone()))}</p><div class="best-slot-players">${(group.participants || []).map(player => `<span class="best-slot-player ${player.isGM ? "gm-player" : ""}" title="${escapeHtml(player.playerName + (player.isGM ? "（GM）" : "") + (player.note ? "：" + player.note : ""))}">${escapeHtml(Array.from(player.playerName || "玩家")[0])}${player.note ? '<sup class="note-alert" aria-hidden="true">!</sup>' : ""}</span>`).join("")}</div><small>${(group.participants || []).map(player => escapeHtml(player.playerName + (player.isGM ? "（GM）" : ""))).join("、")}</small></article>`).join("");
+  return groups.map((group, index) => {
+    const ended = scheduledGroupHasEnded(group);
+    const title = scheduledGroupTitle(group, index);
+    const key = `${schedule.id}:${group.id}`;
+    return `<details class="scheduled-group ${ended ? "ended" : ""}" data-group-expand="${escapeHtml(key)}" ${expandedScheduledGroups.has(key) ? "open" : ""}>
+      <summary><b>${escapeHtml(title)}${ended ? ' <span class="group-ended-label">已結團</span>' : ""}</b><span class="group-summary-time">${escapeHtml(localizedSlotLabel(group.date, group.period, group.periods || schedule.periods, group.timeZone || scheduleTimeZone()))}</span></summary>
+      <div class="scheduled-group-body">${canManageSchedule ? `<div class="group-edit-actions"><button type="button" class="best-slot-filter-clear" data-rename-group="${escapeHtml(group.id)}">修改團名</button><button type="button" class="best-slot-filter-clear" data-cancel-group="${escapeHtml(group.id)}">取消此團</button></div>` : ""}
+      <div class="best-slot-players">${(group.participants || []).map(player => `<span class="best-slot-player ${player.isGM ? "gm-player" : ""}" title="${escapeHtml(player.playerName + (player.isGM ? "（GM）" : "") + (player.note ? "：" + player.note : ""))}">${escapeHtml(Array.from(player.playerName || "玩家")[0])}${player.note ? '<sup class="note-alert" aria-hidden="true">!</sup>' : ""}</span>`).join("")}</div><small>${(group.participants || []).map(player => escapeHtml(player.playerName + (player.isGM ? "（GM）" : ""))).join("、")}</small></div>
+    </details>`;
+  }).join("");
 }
 
 function refreshScheduledGroups() {
@@ -1159,6 +1173,41 @@ function refreshScheduledGroups() {
   const container = document.querySelector("#scheduled-groups");
   if (!container) return;
   container.innerHTML = scheduledGroupsMarkup();
+  container.querySelectorAll("[data-group-expand]").forEach(details => {
+    details.addEventListener("toggle", () => {
+      if (!details.isConnected) return;
+      if (details.open) expandedScheduledGroups.add(details.dataset.groupExpand);
+      else expandedScheduledGroups.delete(details.dataset.groupExpand);
+    });
+  });
+  container.querySelectorAll("[data-rename-group]").forEach(button => {
+    button.onclick = async () => {
+      if (!canManageSchedule || !routeInfo().token) return;
+      const id = schedule.id;
+      const index = (schedule.scheduledGroups || []).findIndex(group => group.id === button.dataset.renameGroup);
+      if (index < 0) return;
+      const entered = prompt("請輸入團務名稱（最多 80 字）", scheduledGroupTitle(schedule.scheduledGroups[index], index));
+      if (entered === null) return;
+      const title = entered.trim();
+      if (!title || title.length > 80) return toast("團名請填寫 1～80 字。");
+      button.disabled = true;
+      try {
+        await runTransaction(db, async tx => {
+          const ref = doc(db, "quickSchedules", id);
+          const snap = await tx.get(ref);
+          if (!snap.exists()) throw Error("約團表已不存在");
+          const groups = snap.data().scheduledGroups || [];
+          if (!groups.some(group => group.id === button.dataset.renameGroup)) throw Error("該團已被取消");
+          tx.update(ref, { scheduledGroups: groups.map(group => group.id === button.dataset.renameGroup ? { ...group, title } : group) });
+        });
+        toast("團名已更新");
+      } catch (error) {
+        console.error(error);
+        toast(error.message || "團名儲存失敗。");
+        button.disabled = false;
+      }
+    };
+  });
   const now = Date.now();
   const nextEnds = (schedule?.scheduledGroups || []).map(scheduledGroupEndEpoch).filter(end => end > now);
   if (nextEnds.length) scheduledGroupStatusTimer = setTimeout(refreshScheduledGroups, Math.min(2147483647, Math.max(1, Math.min(...nextEnds) - now + 50)));
