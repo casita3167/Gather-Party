@@ -44,6 +44,7 @@ let managementShortTitle = "";
 let managementPreviewVersion = 0;
 let bestSlotSort = "count";
 let scheduledGroupStatusTimer = null;
+let bestSlotExpiryTimer = null;
 let bestSlotPlayerKeys = new Set();
 
 function escapeHtml(value = "") {
@@ -690,7 +691,19 @@ function displayedBestSlots(players) {
       || PERIOD_KEYS.indexOf(a.period) - PERIOD_KEYS.indexOf(b.period));
 }
 
+function scheduleBestSlotExpiry() {
+  clearTimeout(bestSlotExpiryTimer);
+  bestSlotExpiryTimer = null;
+  if (!schedule || !document.querySelector("#best-slots")) return;
+  const now = Date.now();
+  const ends = bestSlots(uniqueSubmittedResponses(responses)).map(scheduledGroupEndEpoch).filter(end => end > now);
+  if (ends.length) bestSlotExpiryTimer = setTimeout(
+    refreshBestSlotResults, Math.min(2147483647, Math.max(1, Math.min(...ends) - now + 50))
+  );
+}
+
 function bindBestSlotControls() {
+  scheduleBestSlotExpiry();
   document.querySelector("#best-slot-sort")?.addEventListener("change", event => {
     bestSlotSort = event.currentTarget.value;
     refreshBestSlotResults();
@@ -1667,8 +1680,10 @@ function bestSlots(participants) {
     };
   }));
   const minimum = Number(schedule.minPlayers || 1);
+  const now = Date.now();
   const enough = slots.filter(item =>
-    (!requiresGM || item.availableGMs.length > 0) && item.count >= minimum
+    !scheduledGroupHasEnded(item, now)
+    && (!requiresGM || item.availableGMs.length > 0) && item.count >= minimum
   );
   return enough.sort((a, b) => b.count - a.count || a.date.localeCompare(b.date) || PERIOD_KEYS.indexOf(a.period) - PERIOD_KEYS.indexOf(b.period));
 }
@@ -2074,6 +2089,8 @@ function bindOverviewActions() {
 }
 
 async function handleRoute() {
+  clearTimeout(bestSlotExpiryTimer);
+  bestSlotExpiryTimer = null;
   clearTimeout(scheduledGroupStatusTimer);
   scheduledGroupStatusTimer = null;
   document.querySelector("#time-edit-dialog")?.close();
