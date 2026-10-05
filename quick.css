@@ -452,3 +452,14 @@
 .best-slot-player.selected-participant::after { content:"✓"; position:absolute; right:-5px; bottom:-5px; display:grid; place-items:center; width:13px; height:13px; border:1px solid white; border-radius:50%; color:white; background:#168354; font-size:9px; font-weight:900; }
 .best-slot-player-button:disabled { opacity:.55; cursor:wait; }
 .best-slot-selection-hint { margin:4px 0 10px; color:var(--muted); font-size:.8rem; }
+
+.best-slot-player-filter { min-width:0; margin:0; padding:0; border:0; }
+.best-slot-player-filter legend { margin-bottom:5px; color:var(--muted); font-size:.78rem; font-weight:800; }
+.best-slot-filter-clear { margin:0 0 7px; padding:4px 8px; border:1px solid var(--line); border-radius:7px; background:white; color:var(--primary); font-size:.76rem; cursor:pointer; }
+.best-slot-filter-clear:disabled { opacity:.45; cursor:default; }
+.best-slot-player-options { display:flex; flex-wrap:wrap; gap:6px; max-height:180px; overflow:auto; padding:3px; }
+.best-slot-player-options label { display:flex; align-items:center; gap:6px; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:white; cursor:pointer; }
+.best-slot-player-options label:has(input:checked) { color:var(--primary); border-color:var(--primary); background:var(--primary-soft); }
+.best-slot-player-options input { width:16px; height:16px; margin:0; accent-color:var(--primary); flex:0 0 16px; }
+.best-slot-player-options label > span { margin:0; color:inherit; font-size:.8rem; overflow-wrap:anywhere; }
+.best-slot-player-filter > small { display:block; margin-top:7px; color:var(--muted); font-size:.72rem; line-height:1.5; }
