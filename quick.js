@@ -667,7 +667,7 @@ function bestSlotControlsMarkup(players) {
       <div class="best-slot-player-options">
         ${playerOptions.map(player => {
           const key = normalizedPlayerName(player.playerName);
-          return `<label class="player-filter-person" title="${escapeHtml(player.playerName)}"><input type="checkbox" data-best-slot-player value="${escapeHtml(key)}" ${bestSlotPlayerKeys.has(key) ? "checked" : ""}><span class="player-filter-avatar" aria-hidden="true">${escapeHtml(Array.from(player.playerName || "玩家")[0])}</span><span class="player-filter-name">${escapeHtml(player.playerName)}</span></label>`;
+          return `<label class="player-filter-person" title="${escapeHtml(player.playerName)}"><input type="checkbox" data-best-slot-player aria-label="${escapeHtml(player.playerName)}" value="${escapeHtml(key)}" ${bestSlotPlayerKeys.has(key) ? "checked" : ""}><span class="player-filter-avatar" aria-hidden="true">${escapeHtml(Array.from(player.playerName || "玩家")[0])}</span></label>`;
         }).join("") || '<span class="muted">尚未有玩家填表</span>'}
       </div>
       <small>未勾選時顯示全部；勾選多人時，只顯示所有指定玩家都有空的時段。</small>
@@ -1162,7 +1162,7 @@ function scheduledGroupsMarkup() {
     return `<details class="scheduled-group ${ended ? "ended" : ""}" data-group-expand="${escapeHtml(key)}" ${expandedScheduledGroups.has(key) ? "open" : ""}>
       <summary><b>${escapeHtml(title)}${ended ? ' <span class="group-ended-label">已結團</span>' : ""}</b><span class="group-summary-time">${escapeHtml(localizedSlotLabel(group.date, group.period, group.periods || schedule.periods, group.timeZone || scheduleTimeZone()))}</span></summary>
       <div class="scheduled-group-body">${canManageSchedule ? `<div class="group-edit-actions"><button type="button" class="best-slot-filter-clear" data-rename-group="${escapeHtml(group.id)}">修改團名</button><button type="button" class="best-slot-filter-clear" data-cancel-group="${escapeHtml(group.id)}">取消此團</button></div>` : ""}
-      <div class="best-slot-players">${(group.participants || []).map(player => `<span class="best-slot-player ${player.isGM ? "gm-player" : ""}" title="${escapeHtml(player.playerName + (player.isGM ? "（GM）" : "") + (player.note ? "：" + player.note : ""))}">${escapeHtml(Array.from(player.playerName || "玩家")[0])}${player.note ? '<sup class="note-alert" aria-hidden="true">!</sup>' : ""}</span>`).join("")}</div><small>${(group.participants || []).map(player => escapeHtml(player.playerName + (player.isGM ? "（GM）" : ""))).join("、")}</small></div>
+      <div class="best-slot-players">${(group.participants || []).map(player => `<span class="best-slot-player ${player.isGM ? "gm-player" : ""}" title="${escapeHtml(player.playerName + (player.isGM ? "（GM）" : "") + (player.note ? "：" + player.note : ""))}">${escapeHtml(Array.from(player.playerName || "玩家")[0])}${player.note ? '<sup class="note-alert" aria-hidden="true">!</sup>' : ""}</span>`).join("")}</div></div>
     </details>`;
   }).join("");
 }
@@ -2300,3 +2300,30 @@ function exportScheduleResults() {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+function showUpdateAnnouncement() {
+  // 下次公告請更換 id 與 items；首頁及約團頁須使用相同版本。
+  const id = "20261005-14";
+  const items = ["指定玩家與已成團名單改為精簡圓圈，滑鼠懸停可查看全名。", "已成團卡片可收合，管理者可修改團名；時段結束後顯示已結團。", "新增更新公告；勾選已看過後，此裝置不再顯示同一版公告。"];
+  const key = "gather-party:announcement-seen";
+  try { if (localStorage.getItem(key) === id) return; } catch {}
+  if (document.querySelector("#update-announcement")) return;
+  const dialog = document.createElement("dialog");
+  dialog.id = "update-announcement";
+  dialog.setAttribute("aria-labelledby", "update-announcement-title");
+  dialog.innerHTML = '<style>#update-announcement{box-sizing:border-box;width:min(480px,calc(100vw - 32px));max-height:85dvh;overflow:auto;border:1px solid #dedbea;border-radius:20px;padding:24px;color:#202334;background:white}#update-announcement::backdrop{background:#20233466}#update-announcement h2{margin:0 0 16px;font-size:1.25rem}#update-announcement li{margin:10px 0;line-height:1.65;overflow-wrap:anywhere}#update-announcement label{display:flex;gap:8px;align-items:center;margin:20px 0}#update-announcement footer{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}#update-announcement button{padding:10px 16px;border:1px solid #dedbea;border-radius:10px;cursor:pointer}#update-announcement button:last-child{background:#5547d8;color:white}#update-announcement button:disabled{opacity:.45;cursor:default}</style><h2 id="update-announcement-title">更新公告｜2026/10/05</h2><ul></ul><label><input type="checkbox">我已看過本次更新</label><footer><button type="button">稍後再看</button><button type="button" disabled>確認</button></footer>';
+  items.forEach(text => { const li = document.createElement("li"); li.textContent = text; dialog.querySelector("ul").append(li); });
+  const checkbox = dialog.querySelector("input");
+  const [later, confirm] = dialog.querySelectorAll("button");
+  checkbox.onchange = () => { confirm.disabled = !checkbox.checked; };
+  later.onclick = () => dialog.close();
+  confirm.onclick = () => {
+    if (!checkbox.checked) return;
+    try { localStorage.setItem(key, id); } catch {}
+    dialog.close();
+  };
+  dialog.addEventListener("close", () => dialog.remove(), {once:true});
+  document.body.append(dialog);
+  dialog.showModal();
+}
+setTimeout(showUpdateAnnouncement, 800);
