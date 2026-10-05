@@ -525,3 +525,6 @@
 
 /* Avatar-only filters: names remain available through title and aria-label. */
 .player-filter-person { min-height:33px; gap:0; }
+
+#participant-hover-tooltip { position:fixed; z-index:2147483647; pointer-events:none; max-width:min(320px,calc(100vw - 16px)); padding:7px 10px; border-radius:8px; background:#24243b; color:#fff; box-shadow:0 4px 14px #20233430; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+#participant-hover-tooltip[hidden] { display:none; }
