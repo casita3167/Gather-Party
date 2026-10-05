@@ -659,7 +659,7 @@ function bestSlotControlsMarkup(players) {
       <div class="best-slot-player-options">
         ${playerOptions.map(player => {
           const key = normalizedPlayerName(player.playerName);
-          return `<label><input type="checkbox" data-best-slot-player value="${escapeHtml(key)}" ${bestSlotPlayerKeys.has(key) ? "checked" : ""}><span>${escapeHtml(player.playerName)}</span></label>`;
+          return `<label class="player-filter-person" title="${escapeHtml(player.playerName)}"><input type="checkbox" data-best-slot-player value="${escapeHtml(key)}" ${bestSlotPlayerKeys.has(key) ? "checked" : ""}><span class="player-filter-avatar" aria-hidden="true">${escapeHtml(Array.from(player.playerName || "玩家")[0])}</span><span class="player-filter-name">${escapeHtml(player.playerName)}</span></label>`;
         }).join("") || '<span class="muted">尚未有玩家填表</span>'}
       </div>
       <small>未勾選時顯示全部；勾選多人時，只顯示所有指定玩家都有空的時段。</small>
