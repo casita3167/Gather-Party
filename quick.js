@@ -43,6 +43,7 @@ let managementShortUrl = "";
 let managementShortTitle = "";
 let managementPreviewVersion = 0;
 let bestSlotSort = "count";
+let scheduledGroupStatusTimer = null;
 let bestSlotPlayerKeys = new Set();
 
 function escapeHtml(value = "") {
@@ -169,11 +170,11 @@ function zonedDateTimeEpoch(date, hour, minute, timeZone) {
   return guess;
 }
 
-function localizedPeriodInfo(date, period, ranges = schedule?.periods || {}) {
+function localizedPeriodInfo(date, period, ranges = schedule?.periods || {}, sourceTimeZone = scheduleTimeZone()) {
   const raw = ranges[period] || "";
   const parsed = parsePeriodRange(raw);
   if (!parsed) return { label: raw, startEpoch: null, endEpoch: null };
-  const sourceZone = scheduleTimeZone();
+  const sourceZone = sourceTimeZone;
   const startEpoch = zonedDateTimeEpoch(date, parsed.startHour, parsed.startMinute, sourceZone);
   const startMinutes = parsed.startHour * 60 + parsed.startMinute;
   const endMinutes = parsed.endHour * 60 + parsed.endMinute;
@@ -193,8 +194,8 @@ function localizedPeriodInfo(date, period, ranges = schedule?.periods || {}) {
   return { label: `${start}～${end}`, startEpoch, endEpoch };
 }
 
-function localizedSlotLabel(date, period, ranges = schedule?.periods || {}) {
-  return `${localizedPeriodInfo(date, period, ranges).label}・${period}`;
+function localizedSlotLabel(date, period, ranges = schedule?.periods || {}, sourceTimeZone = scheduleTimeZone()) {
+  return `${localizedPeriodInfo(date, period, ranges, sourceTimeZone).label}・${period}`;
 }
 
 function localizedChoiceSummary(date, values = [], ranges = schedule?.periods || {}) {
@@ -1123,16 +1124,31 @@ async function cleanExpiredAvailability(id) {
   if (permissionDenied && canManageSchedule) toast("過期時間已隱藏；資料清理需發布新版資料庫規則。");
 }
 
+function scheduledGroupEndEpoch(group) {
+  const info = localizedPeriodInfo(group.date, group.period, group.periods || schedule?.periods || {}, group.timeZone || scheduleTimeZone());
+  // If a legacy time range is invalid, end the card at the end of its calendar day.
+  return info.endEpoch ?? zonedDateTimeEpoch(addDateDays(group.date, 1), 0, 0, group.timeZone || scheduleTimeZone());
+}
+
+function scheduledGroupHasEnded(group, now = Date.now()) {
+  return now >= scheduledGroupEndEpoch(group);
+}
+
 function scheduledGroupsMarkup() {
   const groups = Array.isArray(schedule?.scheduledGroups) ? schedule.scheduledGroups : [];
   if (!groups.length) return '<div class="empty small">尚未排定團務。選取玩家達到上限即可存成一團。</div>';
-  return groups.map((group, index) => `<article class="scheduled-group"><header><b>第 ${index + 1} 團</b>${canManageSchedule ? `<button type="button" class="best-slot-filter-clear" data-cancel-group="${escapeHtml(group.id)}">取消此團</button>` : ""}</header><p>${escapeHtml(localizedSlotLabel(group.date, group.period, group.periods || schedule.periods))}</p><div class="best-slot-players">${(group.participants || []).map(player => `<span class="best-slot-player ${player.isGM ? "gm-player" : ""}" title="${escapeHtml(player.playerName + (player.isGM ? "（GM）" : "") + (player.note ? "：" + player.note : ""))}">${escapeHtml(Array.from(player.playerName || "玩家")[0])}${player.note ? '<sup class="note-alert" aria-hidden="true">!</sup>' : ""}</span>`).join("")}</div><small>${(group.participants || []).map(player => escapeHtml(player.playerName + (player.isGM ? "（GM）" : ""))).join("、")}</small></article>`).join("");
+  return groups.map((group, index) => `<article class="scheduled-group ${scheduledGroupHasEnded(group) ? "ended" : ""}"><header><b>${scheduledGroupHasEnded(group) ? "已結束" : `第 ${index + 1} 團`}</b>${canManageSchedule ? `<button type="button" class="best-slot-filter-clear" data-cancel-group="${escapeHtml(group.id)}">取消此團</button>` : ""}</header><p>${escapeHtml(localizedSlotLabel(group.date, group.period, group.periods || schedule.periods, group.timeZone || scheduleTimeZone()))}</p><div class="best-slot-players">${(group.participants || []).map(player => `<span class="best-slot-player ${player.isGM ? "gm-player" : ""}" title="${escapeHtml(player.playerName + (player.isGM ? "（GM）" : "") + (player.note ? "：" + player.note : ""))}">${escapeHtml(Array.from(player.playerName || "玩家")[0])}${player.note ? '<sup class="note-alert" aria-hidden="true">!</sup>' : ""}</span>`).join("")}</div><small>${(group.participants || []).map(player => escapeHtml(player.playerName + (player.isGM ? "（GM）" : ""))).join("、")}</small></article>`).join("");
 }
 
 function refreshScheduledGroups() {
+  clearTimeout(scheduledGroupStatusTimer);
+  scheduledGroupStatusTimer = null;
   const container = document.querySelector("#scheduled-groups");
   if (!container) return;
   container.innerHTML = scheduledGroupsMarkup();
+  const now = Date.now();
+  const nextEnds = (schedule?.scheduledGroups || []).map(scheduledGroupEndEpoch).filter(end => end > now);
+  if (nextEnds.length) scheduledGroupStatusTimer = setTimeout(refreshScheduledGroups, Math.min(2147483647, Math.max(1, Math.min(...nextEnds) - now + 50)));
   container.querySelectorAll("[data-cancel-group]").forEach(button => {
     button.onclick = async () => {
       if (!canManageSchedule || !routeInfo().token || !confirm("確定取消這一團？玩家填寫的可用時間會保留。")) return;
@@ -1220,7 +1236,7 @@ function completedSelectionUpdates(data, participants, cutoff) {
     if (people.filter(player => !participantIsGM(player, data)).length !== limit) continue;
     if (scheduleRequiresGM(data) && !people.some(player => participantIsGM(player, data))) continue;
     scheduledGroups.push({
-      id: crypto.randomUUID(), date, period, periods: data.periods || {},
+      id: crypto.randomUUID(), date, period, periods: data.periods || {}, timeZone: data.timeZone || DEFAULT_TIME_ZONE,
       createdAt: new Date().toISOString(),
       participants: people.map(player => ({
         playerName: player.playerName, responseIds: playerResponseIds(player),
@@ -1304,7 +1320,7 @@ function bindBestSlotParticipants() {
           const full = playerCount === limit && (!scheduleRequiresGM(data) || people.some(player => participantIsGM(player, data)));
           if (full) {
             groups.push({
-              id: crypto.randomUUID(), date, period, periods: data.periods || {},
+              id: crypto.randomUUID(), date, period, periods: data.periods || {}, timeZone: data.timeZone || DEFAULT_TIME_ZONE,
               createdAt: new Date().toISOString(),
               participants: people.map(player => ({
                 playerName: player.playerName, responseIds: playerResponseIds(player),
@@ -2058,6 +2074,8 @@ function bindOverviewActions() {
 }
 
 async function handleRoute() {
+  clearTimeout(scheduledGroupStatusTimer);
+  scheduledGroupStatusTimer = null;
   document.querySelector("#time-edit-dialog")?.close();
   unsubscribeSchedule?.();
   unsubscribeSchedule = null;
