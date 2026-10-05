@@ -510,3 +510,15 @@
 .scheduled-group.ended { border-color:#efb7b7; background:#fff0f0; color:#a92727; }
 .scheduled-group.ended header > b { color:#b42323; }
 .scheduled-group.ended small { color:#8d4545; }
+
+.scheduled-group > summary { cursor:pointer; list-style:none; display:grid; gap:5px; position:relative; padding-right:17px; }
+.scheduled-group > summary::-webkit-details-marker { display:none; }
+.scheduled-group > summary::after { content:"▸"; position:absolute; right:0; top:0; color:var(--muted); }
+.scheduled-group[open] > summary::after { content:"▾"; }
+.scheduled-group > summary > b { overflow-wrap:anywhere; font-size:.85rem; }
+.group-summary-time { font-size:.76rem; line-height:1.5; overflow-wrap:anywhere; }
+.scheduled-group-body { margin-top:10px; }
+.group-edit-actions { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+.group-edit-actions .best-slot-filter-clear { margin:0; }
+.group-ended-label { display:inline-block; color:#b42323; font-size:.7rem; font-weight:800; }
+.scheduled-group.ended > summary > b { color:#b42323; }
