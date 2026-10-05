@@ -220,7 +220,14 @@ service cloud.firestore {
               && preservesLockedQuickDates(scheduleId)
               && request.resource.data.submitted == true)
             || managesQuickSchedule(scheduleId));
-        allow update: if (signedIn()
+        // Managers may remove expired availability without changing player identity or notes.
+        allow update: if (managesQuickSchedule(scheduleId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['choices', 'batchGroups'])
+            && request.resource.data.choices is map
+            && request.resource.data.choices.diff(resource.data.choices).addedKeys().size() == 0
+            && request.resource.data.choices.diff(resource.data.choices).changedKeys().size() == 0
+            && request.resource.data.batchGroups is map)
+          || (signedIn()
             && request.auth.uid == userId
             && get(/databases/$(database)/documents/quickSchedules/$(scheduleId)).data.get('closed', false) == false
             && preservesLockedQuickDates(scheduleId)
