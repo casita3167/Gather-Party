@@ -506,3 +506,7 @@
 .best-slot-sort-column .scheduled-group small { font-size:.7rem; }
 .best-slot-sort-column .best-slot-players { grid-template-columns:repeat(auto-fit,27px); max-width:100%; gap:5px; }
 .best-slot-sort-column .empty { padding:10px 6px; font-size:.75rem; }
+
+.scheduled-group.ended { border-color:#efb7b7; background:#fff0f0; color:#a92727; }
+.scheduled-group.ended header > b { color:#b42323; }
+.scheduled-group.ended small { color:#8d4545; }
