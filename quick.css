@@ -444,3 +444,11 @@
 .clone-mode-options span { display:grid; gap:2px; }
 .clone-mode-options small { color:var(--muted); font-weight:500; line-height:1.5; }
 .clone-schedule-message { min-height:1.5em; color:var(--red); font-weight:750; }
+
+/* The selected roster is separate from availability; keep GM and note colours. */
+.best-slot-player-button { padding:0; cursor:pointer; font:inherit; appearance:none; }
+.best-slot-player-button:hover, .best-slot-player-button:focus-visible { outline:2px solid #176e4a; outline-offset:2px; }
+.best-slot-player.selected-participant { outline:3px solid #168354; outline-offset:2px; }
+.best-slot-player.selected-participant::after { content:"✓"; position:absolute; right:-5px; bottom:-5px; display:grid; place-items:center; width:13px; height:13px; border:1px solid white; border-radius:50%; color:white; background:#168354; font-size:9px; font-weight:900; }
+.best-slot-player-button:disabled { opacity:.55; cursor:wait; }
+.best-slot-selection-hint { margin:4px 0 10px; color:var(--muted); font-size:.8rem; }
