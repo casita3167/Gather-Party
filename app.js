@@ -772,3 +772,30 @@ start().catch(error => {
   console.error(error);
   root.innerHTML = '<main class="error-screen"><h1>網站初始化失敗</h1><p>請確認網路連線，並重新整理頁面。</p></main>';
 });
+
+function showUpdateAnnouncement() {
+  // 下次公告請更換 id 與 items；首頁及約團頁須使用相同版本。
+  const id = "20261005-14";
+  const items = ["指定玩家與已成團名單改為精簡圓圈，滑鼠懸停可查看全名。", "已成團卡片可收合，管理者可修改團名；時段結束後顯示已結團。", "新增更新公告；勾選已看過後，此裝置不再顯示同一版公告。"];
+  const key = "gather-party:announcement-seen";
+  try { if (localStorage.getItem(key) === id) return; } catch {}
+  if (document.querySelector("#update-announcement")) return;
+  const dialog = document.createElement("dialog");
+  dialog.id = "update-announcement";
+  dialog.setAttribute("aria-labelledby", "update-announcement-title");
+  dialog.innerHTML = '<style>#update-announcement{box-sizing:border-box;width:min(480px,calc(100vw - 32px));max-height:85dvh;overflow:auto;border:1px solid #dedbea;border-radius:20px;padding:24px;color:#202334;background:white}#update-announcement::backdrop{background:#20233466}#update-announcement h2{margin:0 0 16px;font-size:1.25rem}#update-announcement li{margin:10px 0;line-height:1.65;overflow-wrap:anywhere}#update-announcement label{display:flex;gap:8px;align-items:center;margin:20px 0}#update-announcement footer{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}#update-announcement button{padding:10px 16px;border:1px solid #dedbea;border-radius:10px;cursor:pointer}#update-announcement button:last-child{background:#5547d8;color:white}#update-announcement button:disabled{opacity:.45;cursor:default}</style><h2 id="update-announcement-title">更新公告｜2026/10/05</h2><ul></ul><label><input type="checkbox">我已看過本次更新</label><footer><button type="button">稍後再看</button><button type="button" disabled>確認</button></footer>';
+  items.forEach(text => { const li = document.createElement("li"); li.textContent = text; dialog.querySelector("ul").append(li); });
+  const checkbox = dialog.querySelector("input");
+  const [later, confirm] = dialog.querySelectorAll("button");
+  checkbox.onchange = () => { confirm.disabled = !checkbox.checked; };
+  later.onclick = () => dialog.close();
+  confirm.onclick = () => {
+    if (!checkbox.checked) return;
+    try { localStorage.setItem(key, id); } catch {}
+    dialog.close();
+  };
+  dialog.addEventListener("close", () => dialog.remove(), {once:true});
+  document.body.append(dialog);
+  dialog.showModal();
+}
+setTimeout(showUpdateAnnouncement, 800);
