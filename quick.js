@@ -683,13 +683,13 @@ function displayedBestSlots(players) {
       return [...bestSlotPlayerKeys].every(key => available.has(key));
     });
   }
-  return [...slots].sort((a, b) => bestSlotSort === "date"
+  return [...slots].sort((a, b) => Number(slotHasScheduledGroup(a)) - Number(slotHasScheduledGroup(b)) || (bestSlotSort === "date"
     ? a.date.localeCompare(b.date)
       || PERIOD_KEYS.indexOf(a.period) - PERIOD_KEYS.indexOf(b.period)
       || b.count - a.count
     : b.count - a.count
       || a.date.localeCompare(b.date)
-      || PERIOD_KEYS.indexOf(a.period) - PERIOD_KEYS.indexOf(b.period));
+      || PERIOD_KEYS.indexOf(a.period) - PERIOD_KEYS.indexOf(b.period)));
 }
 
 function scheduleBestSlotExpiry() {
@@ -1245,6 +1245,10 @@ function playerResponseIds(player) {
   return [...new Set([...(player.responseIds || []), player.id].filter(Boolean))].sort();
 }
 
+function slotHasScheduledGroup(slot) {
+  return (schedule?.scheduledGroups || []).some(group => group.date === slot.date && group.period === slot.period);
+}
+
 function bestSlotPlayersMarkup(players = [], date, period) {
   const selected = selectedSlotIds(date, period);
   return `<span class="best-slot-players" aria-label="可以參加的人員">${players.map(player => {
@@ -1255,17 +1259,20 @@ function bestSlotPlayersMarkup(players = [], date, period) {
     const isSelected = ids.some(id => selected.has(id));
     const booked = !participantIsGM(player) && (schedule.scheduledGroups || []).some(group => group.date === date && group.period === period && (group.participants || []).some(person => !person.isGM && (person.responseIds || []).some(id => ids.includes(id))));
     const label = identity + (booked ? "，此時段已排入團務" : isSelected ? "，已選為參團人員" : "，尚未選為參團人員") + noteLabel;
-    const classes = `best-slot-player ${participantIsGM(player) ? "gm-player" : ""} ${hasNote ? "has-note" : ""} ${isSelected ? "selected-participant" : ""}`;
+    const inGroup = (schedule.scheduledGroups || []).some(group => group.date === date && group.period === period && (group.participants || []).some(person => (person.responseIds || []).some(id => ids.includes(id))));
+    const marked = isSelected || inGroup;
+    const slotHasSelection = selected.size > 0 || slotHasScheduledGroup({date, period});
+    const classes = `best-slot-player ${participantIsGM(player) ? "gm-player" : ""} ${hasNote ? "has-note" : ""} ${marked ? "selected-participant" : slotHasSelection ? "unselected-participant" : ""}`;
     const contents = `${escapeHtml(Array.from(player.playerName || "玩家")[0])}${hasNote ? '<sup class="note-alert" aria-hidden="true">!</sup>' : ""}`;
     return canManageSchedule
-      ? `<button type="button" class="${classes} best-slot-player-button" data-date="${escapeHtml(date)}" data-period="${escapeHtml(period)}" data-response-ids="${escapeHtml(ids.join(","))}" ${booked ? 'disabled data-booked="true"' : ""} aria-pressed="${isSelected}" title="${escapeHtml(label + "；點擊切換參團")}" aria-label="${escapeHtml(label + "；點擊切換參團")}">${contents}</button>`
-      : `<span class="${classes}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${contents}</span>`;
+      ? `<button type="button" class="${classes} best-slot-player-button" data-date="${escapeHtml(date)}" data-period="${escapeHtml(period)}" data-response-ids="${escapeHtml(ids.join(","))}" ${booked ? 'disabled data-booked="true"' : ""} aria-pressed="${isSelected}" aria-label="${escapeHtml(label + "；點擊切換參團")}">${contents}</button>`
+      : `<span class="${classes}" aria-label="${escapeHtml(label)}">${contents}</span>`;
   }).join("")}</span>`;
 }
 
 function bestMarkup(items, total, emptyMessage = "") {
   return items.length
-    ? items.slice(0, 10).map(item => {
+    ? [...items.filter(item => !slotHasScheduledGroup(item)).slice(0, 10), ...items.filter(slotHasScheduledGroup)].map(item => {
       const available = [...item.availableGMs, ...item.players];
       const selected = selectedSlotIds(item.date, item.period);
       const selectedPeople = available.filter(player => playerResponseIds(player).some(id => selected.has(id)));
@@ -1274,7 +1281,7 @@ function bestMarkup(items, total, emptyMessage = "") {
       const selectionText = selectedPeople.length
         ? `・已選 ${selectedPlayers} 位玩家${selectedGMs ? `＋${selectedGMs} 位 GM` : ""}`
         : "";
-      return `<div class="best-slot"><span class="best-slot-time">${escapeHtml(localizedSlotLabel(item.date, item.period))}</span><div class="best-slot-availability">${bestSlotPlayersMarkup(available, item.date, item.period)}<small>${scheduleRequiresGM() ? `${item.availableGMs.length} 位 GM 有空・` : ""}${item.count}／${total} 位玩家${Number(schedule.maxPlayers) > 0 && item.count > Number(schedule.maxPlayers) ? `・可成團，最多 ${Number(schedule.maxPlayers)} 人參加` : ""}${selectionText}</small></div></div>`;
+      return `<div class="best-slot ${slotHasScheduledGroup(item) ? "scheduled-slot" : ""}"><span class="best-slot-time">${escapeHtml(localizedSlotLabel(item.date, item.period))}</span><div class="best-slot-availability">${bestSlotPlayersMarkup(available, item.date, item.period)}<small>${scheduleRequiresGM() ? `${item.availableGMs.length} 位 GM 有空・` : ""}${item.count}／${total} 位玩家${Number(schedule.maxPlayers) > 0 && item.count > Number(schedule.maxPlayers) ? `・可成團，最多 ${Number(schedule.maxPlayers)} 人參加` : ""}${selectionText}${slotHasScheduledGroup(item) ? "・已有成團" : ""}</small></div></div>`;
     }).join("")
     : `<div class="empty small">${escapeHtml(emptyMessage || (scheduleRequiresGM() ? "目前沒有 GM 有空且玩家達到最低人數的時段。" : "目前沒有玩家達到最低成團人數的時段。"))}</div>`;
 }
@@ -2338,7 +2345,7 @@ function installParticipantTooltip() {
   document.body.append(tooltip);
   let active = null;
   let originalTitle = "";
-  const selector = ".player-filter-person, .best-slot-player";
+  const selector = ".player-filter-person, .scheduled-group .best-slot-player";
   function hide() {
     if (active) {
       active.setAttribute("title", originalTitle);
