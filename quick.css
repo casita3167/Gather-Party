@@ -522,3 +522,6 @@
 .group-edit-actions .best-slot-filter-clear { margin:0; }
 .group-ended-label { display:inline-block; color:#b42323; font-size:.7rem; font-weight:800; }
 .scheduled-group.ended > summary > b { color:#b42323; }
+
+/* Avatar-only filters: names remain available through title and aria-label. */
+.player-filter-person { min-height:33px; gap:0; }
