@@ -2310,18 +2310,18 @@ function exportScheduleResults() {
 
 function showUpdateAnnouncement() {
   // 僅在有重要功能變更且公告草稿經確認後啟用；兩頁使用相同版本。
-  const enabled = false;
+  const enabled = true;
   if (!enabled) return;
-  const id = "20261005-14";
-  const items = ["指定玩家與已成團名單改為精簡圓圈，滑鼠懸停可查看全名。", "已成團卡片可收合，管理者可修改團名；時段結束後顯示已結團。", "新增更新公告；勾選已看過後，此裝置不再顯示同一版公告。"];
+  const id = "guide-20261005-1";
+  const items = ["建立約團表後，請自行保存「玩家填表連結」與「私人管理連結」。\n玩家連結用來邀請大家填寫時間，私人管理連結則能編輯團務設定與安排成團，請負責管理的人先複製收好。\n填表時，輸入常用名稱，在月曆選取日期，再勾選早上、下午或晚上；也可以一次選多天，批次設定時段。\n早上、下午、晚上全選就是全天，△ 表示不確定，X 表示無法參加。若有額外條件，請填在備註中。","如果你是這個團務的 GM，請勾選「我是 GM」並儲存。\nGM 會以黃色顯示，不計入玩家人數；未安排 GM 填表的團務，可在設定中選擇「沒有 GM 填表」。\n送出後，使用同一裝置、同一瀏覽器開啟原表，可在「玩家時間一覽」修改自己的時間。\n網站採匿名方式，以瀏覽器紀錄辨識填表者；更換裝置、使用無痕模式或清除瀏覽器資料，可能無法直接找回原本的紀錄。","排團務時，可透過「指定玩家」多選人員，快速找出大家共同有空的時段。\n持有私人管理連結的人，可在「可成團時段」點選人頭安排成員；已排入的人員會有綠圈與勾勾，確認成團後也能修改團名。"];
   const key = "gather-party:announcement-seen";
   try { if (localStorage.getItem(key) === id) return; } catch {}
   if (document.querySelector("#update-announcement")) return;
   const dialog = document.createElement("dialog");
   dialog.id = "update-announcement";
   dialog.setAttribute("aria-labelledby", "update-announcement-title");
-  dialog.innerHTML = '<style>#update-announcement{box-sizing:border-box;width:min(480px,calc(100vw - 32px));max-height:85dvh;overflow:auto;border:1px solid #dedbea;border-radius:20px;padding:24px;color:#202334;background:white}#update-announcement::backdrop{background:#20233466}#update-announcement h2{margin:0 0 16px;font-size:1.25rem}#update-announcement li{margin:10px 0;line-height:1.65;overflow-wrap:anywhere}#update-announcement label{display:flex;justify-content:flex-start;gap:8px;align-items:center;margin:20px 0;font-size:.95rem;font-weight:500;line-height:1.5;text-align:left}#update-announcement input[type="checkbox"]{box-sizing:border-box;appearance:auto;width:18px;height:18px;min-width:18px;min-height:18px;max-width:18px;max-height:18px;flex:0 0 18px;margin:0;padding:0;accent-color:#5547d8;cursor:pointer}#update-announcement footer{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}#update-announcement button{padding:10px 16px;border:1px solid #dedbea;border-radius:10px;cursor:pointer}#update-announcement button:last-child{background:#5547d8;color:white}#update-announcement button:disabled{opacity:.45;cursor:default}</style><h2 id="update-announcement-title">更新公告｜2026/10/05</h2><ul></ul><label><input type="checkbox">我已看過本次更新</label><footer><button type="button">稍後再看</button><button type="button" disabled>確認</button></footer>';
-  items.forEach(text => { const li = document.createElement("li"); li.textContent = text; dialog.querySelector("ul").append(li); });
+  dialog.innerHTML = '<style>#update-announcement{box-sizing:border-box;width:min(600px,calc(100vw - 32px));max-height:85dvh;overflow:auto;border:1px solid #dedbea;border-radius:20px;padding:24px;color:#202334;background:white}#update-announcement::backdrop{background:#20233466}#update-announcement h2{margin:0 0 16px;font-size:1.25rem}#update-announcement .announcement-content p{margin:0 0 18px;font-size:.95rem;line-height:1.8;white-space:pre-line;overflow-wrap:anywhere}#update-announcement label{display:flex;justify-content:flex-start;gap:8px;align-items:center;margin:20px 0;font-size:.95rem;font-weight:500;line-height:1.5;text-align:left}#update-announcement input[type="checkbox"]{box-sizing:border-box;appearance:auto;width:18px;height:18px;min-width:18px;min-height:18px;max-width:18px;max-height:18px;flex:0 0 18px;margin:0;padding:0;accent-color:#5547d8;cursor:pointer}#update-announcement footer{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}#update-announcement button{padding:10px 16px;border:1px solid #dedbea;border-radius:10px;cursor:pointer}#update-announcement button:last-child{background:#5547d8;color:white}#update-announcement button:disabled{opacity:.45;cursor:default}</style><h2 id="update-announcement-title">Gather Party｜簡易使用說明</h2><div class="announcement-content"></div><label><input type="checkbox">我已看過使用說明</label><footer><button type="button">稍後再看</button><button type="button" disabled>確認</button></footer>';
+  items.forEach(text => { const paragraph = document.createElement("p"); paragraph.textContent = text; dialog.querySelector(".announcement-content").append(paragraph); });
   const checkbox = dialog.querySelector("input");
   const [later, confirm] = dialog.querySelectorAll("button");
   checkbox.onchange = () => { confirm.disabled = !checkbox.checked; };
