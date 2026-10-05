@@ -444,6 +444,8 @@ async function openSchedule(id, routeManagementToken = "") {
           schedule.closed = latest.data().closed === true;
           schedule.lockedDates = latest.data().lockedDates || {};
           schedule.maxGMs = latest.data().maxGMs || 3;
+          schedule.minPlayers = latest.data().minPlayers || 1;
+          schedule.maxPlayers = latest.data().maxPlayers || null;
           schedule.requiresGM = latest.data().requiresGM !== false;
           schedule.timeZone = latest.data().timeZone || DEFAULT_TIME_ZONE;
           schedule.selectedParticipants = latest.data().selectedParticipants || {};
@@ -1199,6 +1201,72 @@ function bestMarkup(items, total, emptyMessage = "") {
     : `<div class="empty small">${escapeHtml(emptyMessage || (scheduleRequiresGM() ? "目前沒有 GM 有空且玩家達到最低人數的時段。" : "目前沒有玩家達到最低成團人數的時段。"))}</div>`;
 }
 
+const pendingGroupReconciliations = new Set();
+
+function completedSelectionUpdates(data, participants, cutoff) {
+  const selectedParticipants = { ...(data.selectedParticipants || {}) };
+  const scheduledGroups = [...(data.scheduledGroups || [])];
+  const limit = Number(data.maxPlayers) || Number(data.minPlayers) || 1;
+  let added = 0;
+  for (const [key, ids] of Object.entries(selectedParticipants)) {
+    const [date, period] = key.split("__");
+    if (!Array.isArray(ids) || date < cutoff || !PERIOD_KEYS.includes(period) || data.lockedDates?.[date]) continue;
+    const occupied = new Set(scheduledGroups.filter(group => group.date === date && group.period === period)
+      .flatMap(group => (group.participants || []).filter(player => !player.isGM).flatMap(player => player.responseIds || [])));
+    const people = participants.filter(player =>
+      player.choices?.[date]?.includes(period)
+      && playerResponseIds(player).some(id => ids.includes(id))
+      && (participantIsGM(player, data) || !playerResponseIds(player).some(id => occupied.has(id))));
+    if (people.filter(player => !participantIsGM(player, data)).length !== limit) continue;
+    if (scheduleRequiresGM(data) && !people.some(player => participantIsGM(player, data))) continue;
+    scheduledGroups.push({
+      id: crypto.randomUUID(), date, period, periods: data.periods || {},
+      createdAt: new Date().toISOString(),
+      participants: people.map(player => ({
+        playerName: player.playerName, responseIds: playerResponseIds(player),
+        isGM: participantIsGM(player, data), note: player.note || ""
+      }))
+    });
+    delete selectedParticipants[key];
+    added++;
+  }
+  return { selectedParticipants, scheduledGroups, added };
+}
+
+async function reconcileCompletedSelections() {
+  if (!canManageSchedule || !routeInfo().token || !schedule || schedule.closed) return;
+  const id = schedule.id;
+  if (pendingGroupReconciliations.has(id)) return;
+  const cutoff = availabilityMonthStart();
+  if (!completedSelectionUpdates(schedule, uniqueSubmittedResponses(responses), cutoff).added) return;
+  pendingGroupReconciliations.add(id);
+  const responseIds = responses.map(player => player.id);
+  try {
+    const added = await runTransaction(db, async tx => {
+      const ref = doc(db, "quickSchedules", id);
+      const snap = await tx.get(ref);
+      if (!snap.exists() || snap.data().closed) return 0;
+      const currentResponses = [];
+      for (const responseId of responseIds) {
+        const response = await tx.get(doc(db, "quickSchedules", id, "responses", responseId));
+        if (response.exists()) currentResponses.push({ id: response.id, ...response.data() });
+      }
+      const update = completedSelectionUpdates(snap.data(), uniqueSubmittedResponses(currentResponses), cutoff);
+      if (update.added) tx.update(ref, {
+        selectedParticipants: update.selectedParticipants,
+        scheduledGroups: update.scheduledGroups
+      });
+      return update.added;
+    });
+    if (added && schedule?.id === id) toast(`已將 ${added} 個選滿人員的時段存入確定成團`);
+  } catch (error) {
+    console.error(error);
+    if (schedule?.id === id) toast("既有名單轉為成團失敗，請重新開啟管理連結。");
+  } finally {
+    pendingGroupReconciliations.delete(id);
+  }
+}
+
 function bindBestSlotParticipants() {
   document.querySelectorAll(".best-slot-player-button").forEach(button => {
     button.addEventListener("click", async () => {
@@ -1279,6 +1347,7 @@ function refreshOverview() {
   }
   refreshCloneScheduleAction();
   applyClosedState();
+  reconcileCompletedSelections();
 }
 
 function calendarPlayersMarkup(date) {
