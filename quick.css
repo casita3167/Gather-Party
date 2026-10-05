@@ -465,7 +465,7 @@
 .best-slot-player-filter > small { display:block; margin-top:7px; color:var(--muted); font-size:.72rem; line-height:1.5; }
 
 /* Player filters: three single-character avatars per row. */
-.best-slot-player-filter { grid-column:1 / -1; }
+.best-slot-player-filter { grid-column:2; grid-row:1; }
 .best-slot-player-options { display:grid; grid-template-columns:repeat(3,48px); justify-content:end; gap:5px; max-height:160px; padding:4px; }
 .best-slot-player-options .player-filter-person { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:2px; min-width:0; margin:0; padding:3px 0; border:0; background:transparent; text-align:center; }
 .best-slot-player-options .player-filter-person:has(input:checked) { background:transparent; }
@@ -488,3 +488,8 @@
 
 .best-slot-controls { gap:7px; margin:10px 0; padding:9px; }
 .best-slot-player-filter > small { margin-top:4px; }
+
+/* Keep sorting and the compact player filter beside each other. */
+.best-slot-controls { grid-template-columns:minmax(0,1fr) 162px; align-items:start; column-gap:10px; }
+.best-slot-player-filter legend { text-align:right; }
+.best-slot-player-filter .best-slot-filter-clear { display:block; margin-left:auto; }
