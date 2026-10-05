@@ -2329,3 +2329,69 @@ function showUpdateAnnouncement() {
   dialog.showModal();
 }
 setTimeout(showUpdateAnnouncement, 800);
+
+function installParticipantTooltip() {
+  const tooltip = document.createElement("div");
+  tooltip.id = "participant-hover-tooltip";
+  tooltip.setAttribute("role", "tooltip");
+  tooltip.hidden = true;
+  document.body.append(tooltip);
+  let active = null;
+  let originalTitle = "";
+  const selector = ".player-filter-person, .best-slot-player";
+  function hide() {
+    if (active) {
+      active.setAttribute("title", originalTitle);
+      if (active.getAttribute("aria-describedby") === tooltip.id) active.removeAttribute("aria-describedby");
+    }
+    active = null;
+    tooltip.hidden = true;
+  }
+  function position(x, y) {
+    const gap = 24;
+    const rect = tooltip.getBoundingClientRect();
+    tooltip.style.left = Math.max(8, Math.min(x - rect.width / 2, window.innerWidth - rect.width - 8)) + "px";
+    // Stay above the pointer, including when close to the top edge.
+    tooltip.style.top = Math.max(8, y - rect.height - gap) + "px";
+    if (y < rect.height + gap + 8) {
+      tooltip.style.left = Math.max(8, Math.min(x + 32, window.innerWidth - rect.width - 8)) + "px";
+    }
+  }
+  function show(target, x, y) {
+    if (active !== target) {
+      hide();
+      originalTitle = target.getAttribute("title") || "";
+      if (!originalTitle) return;
+      active = target;
+      target.removeAttribute("title");
+      target.setAttribute("aria-describedby", tooltip.id);
+      tooltip.textContent = originalTitle;
+      tooltip.hidden = false;
+    }
+    position(x, y);
+  }
+  document.addEventListener("pointerover", event => {
+    if (event.pointerType === "touch") return;
+    const target = event.target.closest?.(selector);
+    if (target) show(target, event.clientX, event.clientY);
+  });
+  document.addEventListener("pointermove", event => {
+    if (!active) return;
+    if (!active.isConnected || !active.contains(event.target)) return hide();
+    position(event.clientX, event.clientY);
+  });
+  document.addEventListener("pointerout", event => {
+    if (active && !active.contains(event.relatedTarget)) hide();
+  });
+  document.addEventListener("focusin", event => {
+    const target = event.target.closest?.(selector);
+    if (!target) return;
+    const rect = target.getBoundingClientRect();
+    show(target, rect.left + rect.width / 2, rect.top);
+  });
+  document.addEventListener("focusout", hide);
+  document.addEventListener("keydown", event => { if (event.key === "Escape") hide(); });
+  window.addEventListener("scroll", hide, true);
+  window.addEventListener("resize", hide);
+}
+installParticipantTooltip();
