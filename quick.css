@@ -493,3 +493,16 @@
 .best-slot-controls { grid-template-columns:minmax(0,1fr) 162px; align-items:start; column-gap:10px; }
 .best-slot-player-filter legend { text-align:right; }
 .best-slot-player-filter .best-slot-filter-clear { display:block; margin-left:auto; }
+
+/* Confirmed groups occupy the space directly below sorting. */
+.best-slot-sort-column { grid-column:1; grid-row:1; min-width:0; }
+.best-slot-sort-column > label { display:block; }
+.best-slot-sort-column .scheduled-groups-section { margin:12px 0 0; }
+.best-slot-sort-column .scheduled-groups-section h3 { margin:0 0 6px; font-size:.88rem; }
+.best-slot-sort-column #scheduled-groups { max-height:320px; overflow:auto; padding:3px; }
+.best-slot-sort-column .scheduled-group { margin:0 0 7px; padding:8px; }
+.best-slot-sort-column .scheduled-group header { flex-wrap:wrap; }
+.best-slot-sort-column .scheduled-group p { margin:6px 0 8px; font-size:.78rem; }
+.best-slot-sort-column .scheduled-group small { font-size:.7rem; }
+.best-slot-sort-column .best-slot-players { grid-template-columns:repeat(auto-fit,27px); max-width:100%; gap:5px; }
+.best-slot-sort-column .empty { padding:10px 6px; font-size:.75rem; }
