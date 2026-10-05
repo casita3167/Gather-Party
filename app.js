@@ -5,7 +5,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import {
   addDoc, collection, deleteDoc, doc, getDoc, getDocs, getFirestore,
-  serverTimestamp, setDoc, updateDoc, writeBatch
+  serverTimestamp, setDoc, updateDoc, writeBatch, query, orderBy, limit
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { holidayFor } from "./taiwan-holidays.js?v=20260912-1";
@@ -88,7 +88,7 @@ function route() {
 function nav(admin = false) {
   return `<header class="topbar">
     <a class="brand" href="#"><span class="brandmark brandmark-image"><img src="./favicon.svg" alt="" aria-hidden="true"></span><span>Gather Party<small>${admin ? "快速約團管理" : "TRPG 快速約團"}</small></span></a>
-    <nav><a href="./quick.html">快速約團</a>${admin ? '<a class="active" href="#admin">管理後台</a>' : ""}</nav>
+    <nav><a href="./quick.html">快速約團</a>${!admin ? '<button type="button" class="feedback-nav-button" id="open-feedback">回報</button>' : ""}${admin ? '<a class="active" href="#admin">管理後台</a>' : ""}</nav>
   </header>`;
 }
 
@@ -188,8 +188,110 @@ function homeGuideMarkup() {
   </section>`;
 }
 
+function feedbackStyles() {
+  return `<style>
+    .feedback-nav-button{border:0;background:transparent;color:var(--primary,#5547d8);font:inherit;font-weight:750;cursor:pointer;padding:6px}
+    .feedback-dialog{box-sizing:border-box;width:min(560px,calc(100vw - 24px));max-height:90dvh;overflow:auto;margin:auto;padding:20px;border:1px solid var(--line,#ddd);border-radius:18px;background:white}
+    .feedback-dialog::backdrop{background:rgba(18,16,32,.5)}
+    .feedback-dialog header{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .feedback-dialog h2{margin:0}.feedback-dialog label{display:grid;gap:6px;margin-top:12px;font-weight:750}
+    .feedback-dialog input,.feedback-dialog textarea,.feedback-dialog select{box-sizing:border-box;width:100%;padding:10px;border:1px solid var(--line,#ddd);border-radius:9px;font:inherit}
+    .feedback-dialog textarea{min-height:130px;resize:vertical}.feedback-dialog .dialog-actions{margin-top:16px}
+    .feedback-message{color:var(--red,#b42323);white-space:pre-wrap}
+    .feedback-list{display:grid;gap:12px;margin-top:14px}.feedback-report{padding:14px;border:1px solid var(--line,#ddd);border-radius:12px;min-width:0}
+    .feedback-report header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+    .feedback-report h3{margin:8px 0}.feedback-report p{white-space:pre-wrap;overflow-wrap:anywhere}.feedback-report small{color:var(--muted,#777)}
+  </style>`;
+}
+
+function openFeedbackDialog() {
+  if (document.querySelector("#feedback-dialog")) return;
+  const dialog = document.createElement("dialog");
+  dialog.id = "feedback-dialog";
+  dialog.className = "feedback-dialog";
+  dialog.innerHTML = `<form><header><h2>回報與建議</h2><button class="icon-button" type="button" data-close aria-label="關閉">×</button></header>
+    <label>回報類型<select name="type"><option value="bug">回報 Bug</option><option value="feature">建議新功能</option></select></label>
+    <label>標題<input name="title" maxlength="80" required placeholder="簡短描述你遇到的問題或建議"></label>
+    <label>詳細說明<textarea name="details" maxlength="2000" required placeholder="Bug 請描述操作步驟、預期結果與實際情況；功能建議請說明用途。請勿貼上私人管理連結或密碼。"></textarea></label>
+    <label>聯絡方式（選填）<input name="contact" maxlength="120" placeholder="Discord 名稱或電子郵件，方便進一步詢問"></label>
+    <p class="feedback-message" role="status"></p>
+    <div class="dialog-actions"><button class="button secondary" type="button" data-close>取消</button><button class="button" type="submit">送出回報</button></div>
+  </form>`;
+  let busy = false;
+  dialog.querySelectorAll("[data-close]").forEach(button => button.onclick = () => { if (!busy) dialog.close(); });
+  dialog.addEventListener("cancel", event => { if (busy) event.preventDefault(); });
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.querySelector("form").onsubmit = async event => {
+    event.preventDefault();
+    if (busy) return;
+    const form = event.currentTarget, message = form.querySelector(".feedback-message");
+    const title = form.elements.title.value.trim(), details = form.elements.details.value.trim();
+    if (!title || !details) { message.textContent = "請填寫標題與詳細說明。"; return; }
+    if (!user) { message.textContent = "尚未完成連線，請稍後再試。"; return; }
+    busy = true;
+    form.querySelectorAll("button").forEach(button => button.disabled = true);
+    message.textContent = "正在送出⋯";
+    try {
+      await addDoc(collection(db, "feedbackReports"), {
+        type: form.elements.type.value, title, details,
+        contact: form.elements.contact.value.trim(), reporterUid: user.uid,
+        status: "new", createdAt: serverTimestamp()
+      });
+      dialog.close();
+      toast("已送出回報，謝謝你的協助！");
+    } catch (error) {
+      console.error(error);
+      message.textContent = error.code === "permission-denied"
+        ? "目前無法送出，網站的回報權限尚未啟用。你填寫的內容已保留，請稍後再試。"
+        : "送出失敗，內容已保留，請稍後再試。";
+    } finally {
+      busy = false;
+      form.querySelectorAll("button").forEach(button => button.disabled = false);
+    }
+  };
+  dialog.showModal();
+}
+
+async function refreshFeedback() {
+  const list = document.querySelector("#feedback-list");
+  if (!list || role?.key !== "admin") return;
+  const refresh = document.querySelector("#refresh-feedback");
+  refresh.disabled = true;
+  list.textContent = "正在讀取回報⋯";
+  try {
+    const snap = await getDocs(query(collection(db, "feedbackReports"), orderBy("createdAt", "desc"), limit(100)));
+    if (!list.isConnected) return;
+    const filter = document.querySelector("#feedback-filter")?.value || "new";
+    const items = snap.docs.filter(item => filter === "all" || item.data().status === filter);
+    list.innerHTML = items.map(item => {
+      const data = item.data();
+      const date = data.createdAt?.toDate?.();
+      return `<article class="feedback-report"><header><b>${data.type === "bug" ? "Bug 回報" : "功能建議"}・${data.status === "done" ? "已處理" : "待處理"}</b><button class="button secondary" type="button" data-feedback-id="${escapeHtml(item.id)}" data-next-status="${data.status === "done" ? "new" : "done"}">${data.status === "done" ? "改為待處理" : "標記已處理"}</button></header><h3>${escapeHtml(data.title)}</h3><p>${escapeHtml(data.details)}</p>${data.contact ? `<p>聯絡方式：${escapeHtml(data.contact)}</p>` : ""}<small>${date ? escapeHtml(date.toLocaleString("zh-TW", {timeZone:"Asia/Taipei"})) : "時間同步中"}</small></article>`;
+    }).join("") || '<p class="muted">目前沒有符合條件的回報。</p>';
+    list.querySelectorAll("[data-feedback-id]").forEach(button => {
+      button.onclick = async () => {
+        button.disabled = true;
+        try {
+          await updateDoc(doc(db, "feedbackReports", button.dataset.feedbackId), { status: button.dataset.nextStatus });
+          await refreshFeedback();
+        } catch (error) {
+          console.error(error);
+          toast("更新回報狀態失敗。");
+          button.disabled = false;
+        }
+      };
+    });
+  } catch (error) {
+    console.error(error);
+    if (list.isConnected) list.textContent = "無法讀取回報，請確認新版資料庫規則已發布。";
+  } finally {
+    refresh.disabled = false;
+  }
+}
+
 function renderHome() {
-  root.innerHTML = `<main class="shell">${nav(false)}
+  root.innerHTML = `<main class="shell">${feedbackStyles()}${nav(false)}
     <section class="portal-head"><span class="eyebrow">GATHER PARTY</span><h1>快速約團</h1><p>建立約團表，讓玩家從月曆填寫可跑日期與時段。</p></section>
     <section class="portal-grid single" aria-label="主要功能">
       <a class="portal-card quick" href="./quick.html"><span class="portal-icon portal-icon-image"><img src="./favicon.svg" alt="" aria-hidden="true"></span><div><h2>建立或查看約團表</h2><p>建立新的快速約團，或回到這台裝置曾經建立的約團表。</p><b>前往快速約團 →</b></div></a>
@@ -197,6 +299,7 @@ function renderHome() {
     ${homeGuideMarkup()}
     <a class="site-admin-lock" href="#admin" aria-label="管理後台"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14v3"/></svg></a>
   </main>`;
+  document.querySelector("#open-feedback").onclick = openFeedbackDialog;
 }
 
 async function getRole(account) {
@@ -338,7 +441,7 @@ async function renderAdmin() {
   role = await getRole(user);
   if (!role) return renderLogin("此帳號沒有管理權限。");
 
-  root.innerHTML = `<main class="shell">${nav(true)}${adminStyles()}
+  root.innerHTML = `<main class="shell">${nav(true)}${adminStyles()}${feedbackStyles()}
     <section class="admin-head"><div><span class="eyebrow">QUICK SCHEDULER</span><h1>快速約團管理</h1><p>${escapeHtml(role.label)}・${escapeHtml(user.email || "")}</p></div><div><button class="button secondary" id="logout" type="button">登出</button></div></section>
     <section class="quick-admin-wrap">
       <div id="quick-admin-stats" class="quick-admin-stats"><div class="quick-admin-stat"><small>快速約團表</small><strong>—</strong></div><div class="quick-admin-stat"><small>玩家填寫總數</small><strong>—</strong></div><div class="quick-admin-stat"><small>已有玩家填寫</small><strong>—</strong></div></div>
@@ -346,6 +449,11 @@ async function renderAdmin() {
         <div class="panel-title"><div><h2>所有快速約團</h2><p>集中查看與管理目前的約團表，可直接修改設定與不開放日期。</p></div></div>
         <div class="quick-admin-toolbar"><input id="quick-admin-search" class="quick-admin-search" type="search" placeholder="搜尋團名、建立者或 GM"><button class="button secondary" id="refresh-schedules" type="button">重新整理</button></div>
         <div id="quick-admin-list" class="quick-admin-list"><div class="loading-inline"><div class="spinner"></div>正在讀取快速約團⋯</div></div>
+      </section>
+      <section class="admin-content">
+        <div class="panel-title"><div><h2>使用者回報</h2><p>最新 100 筆 Bug 回報與功能建議。</p></div><button class="button secondary" id="refresh-feedback" type="button">重新整理回報</button></div>
+        <label>顯示<select id="feedback-filter"><option value="new">待處理</option><option value="done">已處理</option><option value="all">全部</option></select></label>
+        <div id="feedback-list" class="feedback-list"></div>
       </section>
     </section>
   </main>`;
@@ -357,7 +465,9 @@ async function renderAdmin() {
   };
   document.querySelector("#quick-admin-search").oninput = event => drawScheduleList(event.target.value);
   document.querySelector("#refresh-schedules").onclick = () => refreshSchedules();
-  await refreshSchedules();
+  document.querySelector("#refresh-feedback").onclick = refreshFeedback;
+  document.querySelector("#feedback-filter").onchange = refreshFeedback;
+  await Promise.all([refreshSchedules(), refreshFeedback()]);
 }
 
 async function refreshSchedules() {
