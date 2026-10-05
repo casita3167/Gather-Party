@@ -249,6 +249,7 @@ function scheduleRow(item) {
     <div class="quick-admin-actions">
       <a class="button secondary" href="./quick.html#quick=${item.id}" target="_blank" rel="noreferrer">查看約團</a>
       <button class="button manage-quick-admin" data-id="${item.id}" type="button">管理</button>
+      <button class="button secondary recover-quick-manager" data-id="${item.id}" type="button">取回私人管理連結</button>
       <button class="button secondary clone-quick-admin" data-id="${item.id}" type="button">沿用建立新約團</button>
       <button class="button reject delete-quick-admin" data-id="${item.id}" type="button">刪除</button>
     </div>
@@ -264,12 +265,72 @@ function drawScheduleList(filter = "") {
   list.querySelectorAll(".manage-quick-admin").forEach(button => {
     button.onclick = () => openManageSchedule(schedules.find(item => item.id === button.dataset.id));
   });
+  list.querySelectorAll(".recover-quick-manager").forEach(button => {
+    button.onclick = () => recoverPrivateManagementLink(schedules.find(item => item.id === button.dataset.id));
+  });
   list.querySelectorAll(".clone-quick-admin").forEach(button => {
     button.onclick = () => openAdminCloneDialog(schedules.find(item => item.id === button.dataset.id));
   });
   list.querySelectorAll(".delete-quick-admin").forEach(button => {
     button.onclick = () => deleteQuickScheduleAdmin(schedules.find(item => item.id === button.dataset.id));
   });
+}
+
+async function recoverPrivateManagementLink(schedule) {
+  if (!schedule || !user || role?.key !== "admin") return;
+  const dialog = document.createElement("dialog");
+  dialog.className = "admin-edit-dialog";
+  dialog.innerHTML = `<section class="admin-edit-card"><div class="admin-edit-head"><div><h2>私人管理連結</h2><p>${escapeHtml(schedule.title || "未命名約團")}</p></div><button class="icon-button" type="button" data-close aria-label="關閉">×</button></div><div data-link-result role="status">正在取回管理連結⋯</div></section>`;
+  dialog.querySelector("[data-close]").onclick = () => dialog.close();
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  const result = dialog.querySelector("[data-link-result]");
+  try {
+    if (!(await getRole(user)) || role?.key !== "admin") throw Error("此帳號沒有管理權限。");
+    const tokens = await getDocs(collection(db, "quickSchedules", schedule.id, "managementTokens"));
+    const existing = tokens.docs.find(item => /^[A-Za-z0-9_-]{24,64}$/.test(item.id));
+    const token = existing?.id || randomManagementToken();
+    const ref = doc(db, "quickSchedules", schedule.id, "managementTokens", token);
+    if (!existing) await setDoc(ref, { createdAt: serverTimestamp() });
+    const originalUrl = manageUrl(schedule.id, token);
+    const metadata = existing?.data() || {};
+    let url = originalUrl;
+    let note = "";
+    const existingUrl = metadata.shortUrl || "";
+    if (existingUrl.startsWith(SHORTENER_URL + "/m/") && metadata.shortTitle === schedule.title
+      && metadata.previewVersion === SHORT_LINK_PREVIEW_VERSION) {
+      url = existingUrl;
+    } else {
+      try {
+        url = await createShortUrl(originalUrl, "manager", schedule.title || "");
+        await updateDoc(ref, {
+          shortUrl: url, shortTitle: schedule.title || "", previewVersion: SHORT_LINK_PREVIEW_VERSION
+        });
+      } catch (error) {
+        console.error("管理短網址建立失敗", error);
+        url = originalUrl;
+        note = "短網址暫時無法建立，以下原始管理網址仍可使用。";
+      }
+    }
+    if (!dialog.isConnected) return;
+    result.innerHTML = `<p>請自行留存；持有此連結的人可管理這張約團表，請勿傳給玩家。</p>${note ? `<p class="muted">${escapeHtml(note)}</p>` : ""}<label>私人管理連結<input data-manager-url readonly value="${escapeHtml(url)}"></label><div class="admin-dialog-actions"><button class="button secondary" type="button" data-copy-manager>複製連結</button><a class="button" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">開啟管理頁面</a></div>`;
+    result.querySelector("[data-copy-manager]").onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(url);
+        toast("已複製私人管理連結");
+      } catch {
+        result.querySelector("[data-manager-url]").select();
+        toast("請手動複製已選取的網址");
+      }
+    };
+  } catch (error) {
+    console.error(error);
+    if (!dialog.isConnected) return;
+    result.textContent = error.code === "permission-denied"
+      ? "取回失敗：若這張表尚未有管理連結，請先發布新版資料庫規則，讓管理員建立連結後再試。"
+      : "無法取回管理連結，請確認管理員登入狀態後再試。";
+  }
 }
 
 async function renderAdmin() {
