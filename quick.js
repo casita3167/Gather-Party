@@ -238,7 +238,7 @@ function localizedGroupSummary(group) {
 function timeZoneNoticeMarkup() {
   const source = scheduleTimeZone();
   const local = viewerTimeZone();
-  return `<aside class="time-zone-notice"><b>🌐 時間會依你的裝置時區顯示</b><span>月曆日期基準：${escapeHtml(timeZoneName(source))}。</span><span>你的時區：${escapeHtml(timeZoneName(local))}。</span></aside>`;
+  return `<aside class="time-zone-notice"><b>🌐 時間會依你的裝置時區顯示</b><span>月曆日期基準：${escapeHtml(timeZoneName(source))}</span><span>你的時區：${escapeHtml(timeZoneName(local))}</span></aside>`;
 }
 
 function renderCreate() {
