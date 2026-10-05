@@ -445,6 +445,7 @@ async function openSchedule(id, routeManagementToken = "") {
           schedule.maxGMs = latest.data().maxGMs || 3;
           schedule.requiresGM = latest.data().requiresGM !== false;
           schedule.timeZone = latest.data().timeZone || DEFAULT_TIME_ZONE;
+          schedule.selectedParticipants = latest.data().selectedParticipants || {};
           restoreLockedChoices();
           refreshChoiceControls(schedule.periods || {});
           refreshOverview();
@@ -699,11 +700,14 @@ function refreshBestSlotResults(players = uniqueSubmittedResponses(responses)) {
     bindBestSlotControls();
   }
   const best = document.querySelector("#best-slots");
-  if (best) best.innerHTML = bestMarkup(
-    displayedBestSlots(players),
-    players.filter(player => !participantIsGM(player)).length,
-    bestSlotPlayerKey ? "這位玩家目前沒有符合成團條件的時段。" : ""
-  );
+  if (best) {
+    best.innerHTML = bestMarkup(
+      displayedBestSlots(players),
+      players.filter(player => !participantIsGM(player)).length,
+      bestSlotPlayerKey ? "這位玩家目前沒有符合成團條件的時段。" : ""
+    );
+    bindBestSlotParticipants();
+  }
 }
 
 function canCloneCurrentSchedule() {
@@ -865,7 +869,7 @@ function renderSchedule(mineData) {
     ${timeZoneNoticeMarkup()}
     <p id="schedule-status" role="status"></p><div class="management-actions"><button class="button secondary" id="export-results" type="button">匯出約團結果</button>${canManageSchedule ? `<button class="button reject" id="close-schedule" type="button">結束約團</button>` : ""}</div>
     <div class="schedule-grid"><form id="response-form" class="quick-card"><h2>填寫我的時間</h2><p>先從月曆點選你要填寫的日期，再選早上、下午、晚上、△ 不確定或 X。△ 表示當天可能有空、時段未定，不計入確定成團人數。儲存後仍可隨時回來修改日期。</p>${periodLegendMarkup(periodRanges)}<label>玩家名稱<input name="playerName" maxlength="30" value="${escapeHtml(mineData?.playerName || localStorage.getItem("gather-party-player") || "")}" required></label>${gmClaimMarkup(responses.find(r => r.id === user?.uid)?.isGM === true)}<div class="date-picker-head"><h3 id="response-month-title">${responseMonthCursor.getFullYear()} 年 ${responseMonthCursor.getMonth() + 1} 月</h3><div class="date-picker-nav"><button class="mini-button" id="response-prev" type="button">‹</button><button class="mini-button" id="response-today" type="button">今</button><button class="mini-button" id="response-next" type="button">›</button></div></div><div class="date-preset-bar" aria-label="快速選擇本月日期"><span>快速選日期</span><button class="date-preset-button" type="button" data-date-preset="weekdays">週一～週五</button><button class="date-preset-button" type="button" data-date-preset="weekends">週末</button><button class="date-preset-button" type="button" data-date-preset="all">全月</button><button class="date-preset-button clear" type="button" data-date-preset="clear">清除本月</button></div><div id="response-calendar">${responseCalendarMarkup()}</div><section class="batch-choice-panel"><div><h3>批次設定時段</h3><p id="batch-choice-count">目前批次 0 天</p><small>套用時段後按「儲存時間」，日期會收進編號批次；接著即可繼續選下一批。</small></div><div class="batch-choice-actions">${PERIOD_KEYS.map(period => `<button class="choice-button batch-choice-button" type="button" data-batch-choice="${period}">${period}</button>`).join("")}<button class="choice-button uncertain batch-choice-button" type="button" data-batch-choice="△" title="當天可能有空，時段尚未確定" aria-label="不確定">△</button><button class="choice-button no batch-choice-button" type="button" data-batch-choice="X">X</button><button class="choice-button clear batch-choice-button" type="button" data-batch-choice="clear">清除時段</button></div></section><details class="choice-details" id="choice-details" ${choices.size <= 3 ? "open" : ""}><summary>逐日調整 <span id="choice-summary-count">${choices.size} 天</span></summary><div class="choice-list" id="response-choice-list">${responseChoiceListMarkup(periodRanges)}</div></details><label>備註<textarea name="note" maxlength="500" placeholder="例如：晚上九點後才有空、這天可能需要再確認">${escapeHtml(mineData?.note || "")}</textarea></label><div class="quick-form-actions"><span class="muted">至少選擇一個日期，且每個日期都要選時段、△ 不確定或 X</span><button class="button" type="submit">儲存時間</button></div></form>
-      <aside class="quick-card"><h2>可成團時段</h2><p id="response-count">${countedPlayers(submitted).length} 位玩家已填寫・${escapeHtml(gmStatusText(submitted))}・${playerRangeLabel()}</p>${bestSlotControlsMarkup(submitted)}<div class="best-slots" id="best-slots">${bestMarkup(best, countedPlayers(submitted).length, bestSlotPlayerKey ? "這位玩家目前沒有符合成團條件的時段。" : "")}</div><div id="clone-schedule-action">${cloneScheduleActionMarkup()}</div><label>玩家填表連結<div class="share-box"><input id="player-link" readonly value="${escapeHtml(playerLink)}" aria-label="玩家填表短網址"><button class="button secondary" id="copy-quick" type="button">複製</button></div></label>${canManageSchedule ? `<div class="management-box"><h3>私人管理連結</h3><p>換裝置時用這條隨機短網址取回管理權限，請勿傳給玩家。</p>${privateLink ? `<div class="share-box"><input id="manager-link" readonly value="${escapeHtml(privateLink)}" aria-label="私人管理短網址"><button class="button secondary" id="copy-manager" type="button">複製</button></div>` : '<p class="muted">私人管理連結建立中。</p>'}<div class="management-actions"><button class="button secondary full" id="lock-schedule-dates" type="button">🔒 設定不開放日期</button><button class="button secondary full" id="edit-current-schedule" type="button">編輯約團設定</button><button class="button reject full" id="delete-current-schedule" type="button">刪除這張約團表</button></div></div>` : ""}</aside>
+      <aside class="quick-card"><h2>可成團時段</h2>${canManageSchedule ? '<p class="best-slot-selection-hint">點擊人頭選取或取消該時段的參團人員；選取結果會同步顯示給所有人。</p>' : ""}<p id="response-count">${countedPlayers(submitted).length} 位玩家已填寫・${escapeHtml(gmStatusText(submitted))}・${playerRangeLabel()}</p>${bestSlotControlsMarkup(submitted)}<div class="best-slots" id="best-slots">${bestMarkup(best, countedPlayers(submitted).length, bestSlotPlayerKey ? "這位玩家目前沒有符合成團條件的時段。" : "")}</div><div id="clone-schedule-action">${cloneScheduleActionMarkup()}</div><label>玩家填表連結<div class="share-box"><input id="player-link" readonly value="${escapeHtml(playerLink)}" aria-label="玩家填表短網址"><button class="button secondary" id="copy-quick" type="button">複製</button></div></label>${canManageSchedule ? `<div class="management-box"><h3>私人管理連結</h3><p>換裝置時用這條隨機短網址取回管理權限，請勿傳給玩家。</p>${privateLink ? `<div class="share-box"><input id="manager-link" readonly value="${escapeHtml(privateLink)}" aria-label="私人管理短網址"><button class="button secondary" id="copy-manager" type="button">複製</button></div>` : '<p class="muted">私人管理連結建立中。</p>'}<div class="management-actions"><button class="button secondary full" id="lock-schedule-dates" type="button">🔒 設定不開放日期</button><button class="button secondary full" id="edit-current-schedule" type="button">編輯約團設定</button><button class="button reject full" id="delete-current-schedule" type="button">刪除這張約團表</button></div></div>` : ""}</aside>
     </div>
     <section class="quick-card overview"><h2>玩家時間一覽</h2><p>每位玩家的選擇與備註會集中顯示在這裡。</p>${periodLegendMarkup(periodRanges)}<div id="overview-content">${overviewMarkup(submitted)}</div></section>
   </main>`;
@@ -875,6 +879,7 @@ function renderSchedule(mineData) {
   bindResponseCalendar(periodRanges);
   bindOverviewActions();
   bindBestSlotControls();
+  bindBestSlotParticipants();
   bindCloneScheduleAction();
   const responseForm = document.querySelector("#response-form");
   responseForm.onsubmit = saveResponse;
@@ -1063,19 +1068,84 @@ function periodLegendMarkup(ranges) {
   return `<div class="period-legend" aria-label="團務基準時段與填表符號說明">${PERIOD_KEYS.map(period => `<span title="團務基準時區：${escapeHtml(timeZoneName(scheduleTimeZone()))}"><b>${period}</b>${escapeHtml(ranges[period] || defaults[period])}</span>`).join("")}<span title="當天可能有空，時段尚未確定"><b>△</b>不確定</span><span title="當天無法參加"><b>X</b>無法</span></div>`;
 }
 
-function bestSlotPlayersMarkup(players = []) {
+function slotSelectionKey(date, period) {
+  return `${date}__${period}`;
+}
+
+function selectedSlotIds(date, period) {
+  const values = schedule?.selectedParticipants?.[slotSelectionKey(date, period)];
+  return new Set(Array.isArray(values) ? values : []);
+}
+
+function playerResponseIds(player) {
+  return [...new Set([...(player.responseIds || []), player.id].filter(Boolean))].sort();
+}
+
+function bestSlotPlayersMarkup(players = [], date, period) {
+  const selected = selectedSlotIds(date, period);
   return `<span class="best-slot-players" aria-label="可以參加的人員">${players.map(player => {
     const hasNote = Boolean(player.note?.trim());
     const identity = `${player.playerName}${participantIsGM(player) ? "（GM）" : ""}`;
     const noteLabel = hasNote ? "，有備註，請至玩家時間一覽查看" : "";
-    return `<span class="best-slot-player ${participantIsGM(player) ? "gm-player" : ""} ${hasNote ? "has-note" : ""}" title="${escapeHtml(identity + noteLabel)}" aria-label="${escapeHtml(identity + noteLabel)}">${escapeHtml(Array.from(player.playerName || "玩家")[0])}${hasNote ? '<sup class="note-alert" aria-hidden="true">!</sup>' : ""}</span>`;
+    const ids = playerResponseIds(player);
+    const isSelected = ids.some(id => selected.has(id));
+    const label = identity + (isSelected ? "，已選為參團人員" : "，尚未選為參團人員") + noteLabel;
+    const classes = `best-slot-player ${participantIsGM(player) ? "gm-player" : ""} ${hasNote ? "has-note" : ""} ${isSelected ? "selected-participant" : ""}`;
+    const contents = `${escapeHtml(Array.from(player.playerName || "玩家")[0])}${hasNote ? '<sup class="note-alert" aria-hidden="true">!</sup>' : ""}`;
+    return canManageSchedule
+      ? `<button type="button" class="${classes} best-slot-player-button" data-date="${escapeHtml(date)}" data-period="${escapeHtml(period)}" data-response-ids="${escapeHtml(ids.join(","))}" aria-pressed="${isSelected}" title="${escapeHtml(label + "；點擊切換參團")}" aria-label="${escapeHtml(label + "；點擊切換參團")}">${contents}</button>`
+      : `<span class="${classes}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${contents}</span>`;
   }).join("")}</span>`;
 }
 
 function bestMarkup(items, total, emptyMessage = "") {
   return items.length
-    ? items.slice(0, 10).map(item => `<div class="best-slot"><span class="best-slot-time">${escapeHtml(localizedSlotLabel(item.date, item.period))}</span><div class="best-slot-availability">${bestSlotPlayersMarkup([...item.availableGMs, ...item.players])}<small>${scheduleRequiresGM() ? `${item.availableGMs.length} 位 GM 有空・` : ""}${item.count}／${total} 位玩家${Number(schedule.maxPlayers) > 0 && item.count > Number(schedule.maxPlayers) ? `・可成團，最多 ${Number(schedule.maxPlayers)} 人參加` : ""}</small></div></div>`).join("")
+    ? items.slice(0, 10).map(item => {
+      const available = [...item.availableGMs, ...item.players];
+      const selected = selectedSlotIds(item.date, item.period);
+      const selectedPeople = available.filter(player => playerResponseIds(player).some(id => selected.has(id)));
+      const selectedPlayers = selectedPeople.filter(player => !participantIsGM(player)).length;
+      const selectedGMs = selectedPeople.length - selectedPlayers;
+      const selectionText = selectedPeople.length
+        ? `・已選 ${selectedPlayers} 位玩家${selectedGMs ? `＋${selectedGMs} 位 GM` : ""}`
+        : "";
+      return `<div class="best-slot"><span class="best-slot-time">${escapeHtml(localizedSlotLabel(item.date, item.period))}</span><div class="best-slot-availability">${bestSlotPlayersMarkup(available, item.date, item.period)}<small>${scheduleRequiresGM() ? `${item.availableGMs.length} 位 GM 有空・` : ""}${item.count}／${total} 位玩家${Number(schedule.maxPlayers) > 0 && item.count > Number(schedule.maxPlayers) ? `・可成團，最多 ${Number(schedule.maxPlayers)} 人參加` : ""}${selectionText}</small></div></div>`;
+    }).join("")
     : `<div class="empty small">${escapeHtml(emptyMessage || (scheduleRequiresGM() ? "目前沒有 GM 有空且玩家達到最低人數的時段。" : "目前沒有玩家達到最低成團人數的時段。"))}</div>`;
+}
+
+function bindBestSlotParticipants() {
+  document.querySelectorAll(".best-slot-player-button").forEach(button => {
+    button.addEventListener("click", async () => {
+      if (!canManageSchedule || !routeInfo().token) return;
+      const ids = button.dataset.responseIds.split(",").filter(Boolean);
+      if (!ids.length) return;
+      button.disabled = true;
+      try {
+        const ref = doc(db, "quickSchedules", schedule.id);
+        const wasSelected = await runTransaction(db, async transaction => {
+          const current = await transaction.get(ref);
+          if (!current.exists()) throw new Error("約團表已不存在");
+          const all = { ...(current.data().selectedParticipants || {}) };
+          const key = slotSelectionKey(button.dataset.date, button.dataset.period);
+          const selected = new Set(Array.isArray(all[key]) ? all[key] : []);
+          const alreadySelected = ids.some(id => selected.has(id));
+          ids.forEach(id => selected.delete(id));
+          if (!alreadySelected) selected.add(ids[0]);
+          if (selected.size) all[key] = [...selected];
+          else delete all[key];
+          transaction.update(ref, { selectedParticipants: all });
+          return alreadySelected;
+        });
+        toast(wasSelected ? "已取消參團人員" : "已選為參團人員");
+      } catch (error) {
+        console.error(error);
+        toast("選取參團人員失敗，請確認管理權限。");
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
 }
 
 function refreshOverview() {
