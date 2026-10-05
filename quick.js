@@ -245,7 +245,7 @@ function renderCreate() {
   draftLockedDates = new Set();
   root.innerHTML = `<main class="quick-shell">${brand()}
     <section class="quick-head"><span class="eyebrow">QUICK SCHEDULER</span><h1>一眼找出能跑團的時間。</h1><p>建立者可以只是負責統計的人，不必是實際 GM。選好候選日期與早、中、晚的範圍，再把連結交給玩家即可。</p></section>
-    <section class="quick-card my-schedules"><div class="my-schedules-head"><h2>我的快速約團表</h2><p>這台裝置建立的約團表會保留在這裡，不需要 GM 權限。</p></div><div id="my-schedules-list" class="my-schedules-list"><span class="muted">正在讀取⋯</span></div></section>
+    <section class="quick-card my-schedules"><div class="my-schedules-head"><h2>我的快速約團表</h2><p>列出這台瀏覽器建立或參與的約團表；自己的表開啟管理頁，參與的表開啟普通填表頁。</p></div><div id="my-schedules-list" class="my-schedules-list"><span class="muted">正在讀取⋯</span></div></section>
     <form id="create-quick" class="quick-card quick-create-form">
       <section><h2>團務與聯絡資訊</h2><p>建立者只需要設定團務資訊與時段範圍；每位玩家打開連結後，會自行從月曆選擇可跑日期。</p>
         <label>團務名稱<input name="title" maxlength="80" required placeholder="例如：十月團務時間調查"></label>
@@ -293,23 +293,88 @@ function bindDraftLockedDates() {
   draw();
 }
 
+function participationStorageKey() {
+  return `gather-party:participated-schedules:${user?.uid || ""}`;
+}
+
+function rememberedParticipationIds() {
+  try {
+    const ids = JSON.parse(localStorage.getItem(participationStorageKey()) || "[]");
+    return Array.isArray(ids) ? [...new Set(ids.filter(id => typeof id === "string" && /^[A-Za-z0-9]+$/.test(id)))] : [];
+  } catch { return []; }
+}
+
+function rememberParticipation(id) {
+  if (!user || !/^[A-Za-z0-9]+$/.test(id)) return;
+  try { localStorage.setItem(participationStorageKey(), JSON.stringify([...new Set([id, ...rememberedParticipationIds()])])); } catch {}
+}
+
+function myScheduleRowMarkup(item) {
+  const owned = item.ownerUid === user.uid;
+  return `<article class="my-schedule-row"><a href="#quick=${escapeHtml(item.id)}" ${owned ? `data-open-owned="${escapeHtml(item.id)}"` : ""}><span><b>${escapeHtml(item.title)}</b><small>${owned ? "我建立的" : "我參與的"}・${item.closed ? "已結束" : "填表中"}</small></span><span class="open-schedule">${owned ? "管理" : "開啟"} →</span></a>${owned ? `<button class="delete-schedule" type="button" data-id="${escapeHtml(item.id)}" data-title="${escapeHtml(item.title)}" aria-label="刪除 ${escapeHtml(item.title)}">刪除</button>` : ""}</article>`;
+}
+
+async function openOwnedSchedule(id, link) {
+  if (link.dataset.opening) return;
+  link.dataset.opening = "true";
+  link.setAttribute("aria-busy", "true");
+  try {
+    const snap = await getDoc(doc(db, "quickSchedules", id));
+    if (!snap.exists()) throw Error("找不到這張約團表。");
+    // Management entry is limited to the creator, verified against current database data.
+    if (snap.data().ownerUid !== user.uid) {
+      location.hash = `quick=${id}`;
+      return;
+    }
+    const tokens = await getDocs(collection(db, "quickSchedules", id, "managementTokens"));
+    let token = tokens.docs.find(item => /^[A-Za-z0-9_-]{24,}$/.test(item.id))?.id;
+    if (!token) {
+      token = randomManagementToken();
+      await setDoc(doc(db, "quickSchedules", id, "managementTokens", token), {createdAt:serverTimestamp()});
+    }
+    location.hash = `manage=${id}.${token}`;
+  } catch (error) {
+    console.error(error);
+    toast("無法開啟管理頁，請確認這台瀏覽器仍保有建立者紀錄。");
+  } finally {
+    delete link.dataset.opening;
+    link.removeAttribute("aria-busy");
+  }
+}
+
 async function loadMySchedules() {
   const container = document.querySelector("#my-schedules-list");
   if (!container || !user) return;
+  const currentUid = user.uid;
   try {
-    const result = await getDocs(query(collection(db, "quickSchedules"), where("ownerUid", "==", user.uid)));
-    const items = result.docs
-      .map(item => ({ id: item.id, ...item.data() }))
-      .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
-    container.innerHTML = items.length
-      ? items.map(item => `<article class="my-schedule-row"><a href="#quick=${item.id}"><span><b>${escapeHtml(item.title)}</b><small>${item.dates?.length ? `${escapeHtml(dateLabel(item.dates[0], true))}${item.dates.length > 1 ? ` 起・${item.dates.length} 個候選日` : ""}` : "日期未定"}</small></span><span class="open-schedule">開啟 →</span></a><button class="delete-schedule" type="button" data-id="${item.id}" data-title="${escapeHtml(item.title)}" aria-label="刪除 ${escapeHtml(item.title)}">刪除</button></article>`).join("")
-      : '<div class="empty small">還沒有建立過快速約團表。</div>';
+    const result = await getDocs(query(collection(db, "quickSchedules"), where("ownerUid", "==", currentUid)));
+    const byId = new Map(result.docs.map(item => [item.id, {id:item.id, ...item.data()}]));
+    const outcomes = await Promise.allSettled(rememberedParticipationIds().filter(id => !byId.has(id)).map(async id => {
+      const [table, response] = await Promise.all([
+        getDoc(doc(db, "quickSchedules", id)),
+        getDoc(doc(db, "quickSchedules", id, "responses", currentUid))
+      ]);
+      if (table.exists() && response.exists() && response.data().submitted === true)
+        return {id:table.id, ...table.data()};
+      return null;
+    }));
+    outcomes.forEach(result => {
+      if (result.status === "fulfilled" && result.value) byId.set(result.value.id, result.value);
+      else if (result.status === "rejected") console.error("參與紀錄讀取失敗", result.reason);
+    });
+    if (!container.isConnected || user?.uid !== currentUid) return;
+    const items = [...byId.values()].sort((a,b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+    container.innerHTML = items.length ? items.map(myScheduleRowMarkup).join("")
+      : '<div class="empty small">還沒有建立或參與的快速約團表。</div>';
+    container.querySelectorAll("[data-open-owned]").forEach(link => {
+      link.onclick = event => { event.preventDefault(); openOwnedSchedule(link.dataset.openOwned, link); };
+    });
     container.querySelectorAll(".delete-schedule").forEach(button => {
       button.onclick = () => deleteQuickSchedule(button.dataset.id, button.dataset.title, button);
     });
   } catch (error) {
     console.error(error);
-    container.innerHTML = '<div class="empty small">目前無法讀取清單，請確認新版 Firestore Rules 已發布。</div>';
+    if (container.isConnected) container.innerHTML = '<div class="empty small">目前無法讀取清單，請稍後再試。</div>';
   }
 }
 
@@ -420,6 +485,7 @@ async function openSchedule(id, routeManagementToken = "") {
     await cleanExpiredAvailability(id);
     const mine = await getDoc(doc(db, "quickSchedules", id, "responses", user.uid));
     const mineData = mine.exists() ? mine.data() : null;
+    if (mineData?.submitted === true) rememberParticipation(id);
     const savedChoices = currentMonthChoices(mineData?.choices || {});
     const initialDates = mineData ? Object.keys(savedChoices) : (schedule.dates || []).filter(date => date >= availabilityMonthStart());
     choices = new Map(initialDates.map(date => [date, new Set(savedChoices[date] || [])]));
@@ -433,6 +499,7 @@ async function openSchedule(id, routeManagementToken = "") {
     let rendered = false;
     unsubscribeResponses = onSnapshot(collection(db, "quickSchedules", id, "responses"), result => {
       responses = result.docs.map(item => ({ id: item.id, ...item.data(), choices: currentMonthChoices(item.data().choices || {}) }));
+      if (responses.some(item => item.id === user.uid && item.submitted === true)) rememberParticipation(id);
       if (!rendered) {
         const latestMine = responses.find(item => item.id === user.uid) || mineData;
         if (latestMine) {
@@ -2235,6 +2302,7 @@ async function saveOpenResponse(data) {
     if (!current.exists() || current.data().closed === true) throw new Error("約團已結束，無法儲存");
     transaction.set(doc(db, "quickSchedules", id, "responses", user.uid), data);
   });
+  if (data.submitted === true) rememberParticipation(id);
 }
 
 async function closeSchedule(event) {
