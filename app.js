@@ -290,9 +290,9 @@ async function recoverPrivateManagementLink(schedule) {
     if (!(await getRole(user)) || role?.key !== "admin") throw Error("此帳號沒有管理權限。");
     const tokens = await getDocs(collection(db, "quickSchedules", schedule.id, "managementTokens"));
     const existing = tokens.docs.find(item => /^[A-Za-z0-9_-]{24,64}$/.test(item.id));
-    const token = existing?.id || randomManagementToken();
+    if (!existing) throw Object.assign(new Error("這張表沒有可取回的管理憑證。"), { code: "management-token-missing" });
+    const token = existing.id;
     const ref = doc(db, "quickSchedules", schedule.id, "managementTokens", token);
-    if (!existing) await setDoc(ref, { createdAt: serverTimestamp() });
     const originalUrl = manageUrl(schedule.id, token);
     const metadata = existing?.data() || {};
     let url = originalUrl;
@@ -327,8 +327,8 @@ async function recoverPrivateManagementLink(schedule) {
   } catch (error) {
     console.error(error);
     if (!dialog.isConnected) return;
-    result.textContent = error.code === "permission-denied"
-      ? "取回失敗：若這張表尚未有管理連結，請先發布新版資料庫規則，讓管理員建立連結後再試。"
+    result.textContent = error.code === "management-token-missing"
+      ? "這張表沒有既有管理憑證，無法取回私人管理連結；你仍可透過後台的「管理」按鈕編輯約團設定。"
       : "無法取回管理連結，請確認管理員登入狀態後再試。";
   }
 }
