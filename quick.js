@@ -46,6 +46,7 @@ let bestSlotSort = "count";
 let scheduledGroupStatusTimer = null;
 const expandedScheduledGroups = new Set();
 let bestSlotExpiryTimer = null;
+let overviewExpiryTimer = null;
 let bestSlotPlayerKeys = new Set();
 
 function escapeHtml(value = "") {
@@ -2138,10 +2139,43 @@ function openTimeEditor(player) {
 }
 
 
+function overviewChoiceEndEpoch(date, period) {
+  return PERIOD_KEYS.includes(period)
+    ? scheduledGroupEndEpoch({date, period})
+    : zonedDateTimeEpoch(addDateDays(date, 1), 0, 0, scheduleTimeZone());
+}
+
+function unexpiredOverviewChoices(choiceObject = {}, now = Date.now()) {
+  return Object.fromEntries(Object.entries(choiceObject).flatMap(([date, values]) => {
+    const remaining = (Array.isArray(values) ? values : []).filter(period =>
+      overviewChoiceEndEpoch(date, period) > now);
+    return remaining.length ? [[date, remaining]] : [];
+  }));
+}
+
+function scheduleOverviewExpiry() {
+  clearTimeout(overviewExpiryTimer);
+  overviewExpiryTimer = null;
+  if (!schedule || !document.querySelector("#overview-content")) return;
+  const now = Date.now();
+  const ends = uniqueSubmittedResponses(responses).flatMap(player =>
+    Object.entries(player.choices || {}).flatMap(([date, values]) =>
+      (Array.isArray(values) ? values : []).map(period => overviewChoiceEndEpoch(date, period))
+    )).filter(end => end > now);
+  if (!ends.length) return;
+  overviewExpiryTimer = setTimeout(() => {
+    const container = document.querySelector("#overview-content");
+    if (!schedule || !container) return;
+    container.innerHTML = overviewMarkup(uniqueSubmittedResponses(responses));
+    bindOverviewActions();
+    applyClosedState();
+  }, Math.min(2147483647, Math.max(1, Math.min(...ends) - now + 50)));
+}
+
 function overviewMarkup(players) {
   if (!players.length) return '<div class="empty">目前還沒有人填寫。</div>';
   return `<div class="player-availability-grid">${players.map(player => {
-    const groupedChoices = groupedPlayerChoices(player.choices, player.batchGroups);
+    const groupedChoices = groupedPlayerChoices(unexpiredOverviewChoices(player.choices), player.batchGroups);
     const responseIds = player.responseIds || [player.id];
     const isMine = responseIds.includes(user?.uid);
     const canDelete = isMine || canManageSchedule;
@@ -2155,11 +2189,12 @@ function overviewMarkup(players) {
     return `<article class="player-availability"><header><div class="player-name-line"><h3 class="${participantIsGM(player) ? "gm-name" : ""}">${escapeHtml(player.playerName)}${participantIsGM(player) ? "（GM）" : ""}</h3>${noteAlert}</div>${isMine && !schedule?.closed ? `<button type="button" class="button secondary edit-my-time">修改時間</button>` : ""}${deleteButton}</header>${mergeNotice}${hasNote ? `<p class="response-note">${escapeHtml(player.note.trim())}</p>` : ""}<div>${groupedChoices.map(group => {
       const localTime = localizedGroupSummary(group);
       return `<span class="player-date-choice"><span class="player-date-label ${localTime ? "has-local-time" : ""}" ${localTime ? `tabindex="0" data-local-time="你的時間：${escapeHtml(localTime)}" aria-label="團務日期 ${escapeHtml(compactDateRangeLabel(group.start, group.end))}，你的時間：${escapeHtml(localTime)}"` : ""}><b>團務日期：${escapeHtml(compactDateRangeLabel(group.start, group.end))}</b></span><i class="choice-mark ${group.isUnavailable ? "no" : ""}">${escapeHtml(group.label)}</i></span>`;
-    }).join("")}</div></article>`;
+    }).join("") || '<span class="muted">目前沒有尚未過期的時間。</span>'}</div></article>`;
   }).join("")}</div>`;
 }
 
 function bindOverviewActions() {
+  scheduleOverviewExpiry();
   document.querySelectorAll(".edit-my-time").forEach(button => button.onclick = () => {
     const player = uniqueSubmittedResponses(responses).find(p => p.responseIds?.includes(user?.uid));
     if (player) openTimeEditor(player);
@@ -2211,6 +2246,8 @@ function bindOverviewActions() {
 }
 
 async function handleRoute() {
+  clearTimeout(overviewExpiryTimer);
+  overviewExpiryTimer = null;
   clearTimeout(bestSlotExpiryTimer);
   bestSlotExpiryTimer = null;
   clearTimeout(scheduledGroupStatusTimer);
