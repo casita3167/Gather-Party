@@ -1245,7 +1245,7 @@ function openManualGroupDialog() {
     <div class="dialog-head"><h2 id="manual-group-title">手動新增團務</h2><button type="button" class="icon-button" data-close aria-label="關閉">×</button></div>
     <label>團務名稱<input name="groupTitle" maxlength="80" required placeholder="例如：符咒學課程"></label>
     <div class="form-grid"><label>日期<input name="groupDate" type="date" required value="${taiwanTodayKey(scheduleTimeZone())}"></label><label>時段<select name="groupPeriod">${PERIOD_KEYS.map(period => `<option value="${period}">${period}（${escapeHtml(schedule.periods?.[period] || "")}）</option>`).join("")}</select></label></div>
-    <p class="muted">日期與時段以團務時區為準。可選已填表成員，或直接輸入未填表人員；勾選 GM 後會以黃色泡泡顯示。</p>
+    <p class="muted">日期與時段以團務時區為準。可選已填表成員，或直接輸入未填表人員；勾選 GM 後會以黃色泡泡顯示。儲存後此時段停止加入，取消該團才會重新開放。</p>
     <div class="manual-group-roster"></div>
     <button type="button" class="button secondary" data-add-person>＋ 新增成員</button>
     <div class="manual-group-preview" aria-label="成員預覽"></div>
@@ -1320,9 +1320,10 @@ function openManualGroupDialog() {
         const data = snap.data();
         if (data.closed) throw Error("這張約團表已結束。");
         if (Object.hasOwn(data.lockedDates || {}, date)) throw Error("該日期不開放，請先解除鎖定。");
-        const group = {id:groupId, title, date, period, periods:data.periods || {}, timeZone:data.timeZone || DEFAULT_TIME_ZONE, participants:people, createdAt:new Date().toISOString(), manual:true};
+        const group = {id:groupId, title, date, period, periods:data.periods || {}, timeZone:data.timeZone || DEFAULT_TIME_ZONE, participants:people, createdAt:new Date().toISOString(), manual:true, slotClosed:true};
         if (scheduledGroupHasEnded(group)) throw Error("此時段已結束，請選擇其他時間。");
         const groups = data.scheduledGroups || [];
+        if (isSlotClosed(date, period, data)) throw Error("這個時段已確定團務，不能再新增。");
         for (const person of people.filter(person => !person.isGM)) {
           const conflict = groups.some(existing => existing.date === date && existing.period === period && (existing.participants || []).some(member => !member.isGM && (
             normalizedPlayerName(member.playerName) === normalizedPlayerName(person.playerName)
@@ -1330,7 +1331,9 @@ function openManualGroupDialog() {
           )));
           if (conflict) throw Error(person.playerName + "已排入此時段的其他團務。");
         }
-        tx.update(ref, {scheduledGroups:[...groups,group]});
+        const selectedParticipants = {...(data.selectedParticipants || {})};
+        delete selectedParticipants[slotSelectionKey(date, period)];
+        tx.update(ref, {scheduledGroups:[...groups,group], selectedParticipants});
       });
       dialog.close();
       toast("已新增團務");
@@ -1352,8 +1355,9 @@ function scheduledGroupsMarkup() {
     const ended = scheduledGroupHasEnded(group);
     const title = scheduledGroupTitle(group, index);
     const key = `${schedule.id}:${group.id}`;
+    const gmNames = (group.participants || []).filter(person => person.isGM).map(person => person.playerName).join("、");
     return `<details class="scheduled-group ${ended ? "ended" : ""}" data-group-expand="${escapeHtml(key)}" ${expandedScheduledGroups.has(key) ? "open" : ""}>
-      <summary><b>${escapeHtml(title)}${ended ? ' <span class="group-ended-label">已結團</span>' : ""}</b><span class="group-summary-time">${escapeHtml(localizedSlotLabel(group.date, group.period, group.periods || schedule.periods, group.timeZone || scheduleTimeZone()))}</span></summary>
+      <summary><b>${escapeHtml(title)}${ended ? ' <span class="group-ended-label">已結團</span>' : ""}</b><span class="group-summary-time">${escapeHtml(localizedSlotLabel(group.date, group.period, group.periods || schedule.periods, group.timeZone || scheduleTimeZone()))}</span>${gmNames ? `<span class="group-gm-names">GM：${escapeHtml(gmNames)}</span>` : ""}</summary>
       <div class="scheduled-group-body">${canManageSchedule ? `<div class="group-edit-actions"><button type="button" class="best-slot-filter-clear" data-rename-group="${escapeHtml(group.id)}">修改團名</button><button type="button" class="best-slot-filter-clear" data-cancel-group="${escapeHtml(group.id)}">取消此團</button></div>` : ""}
       <div class="best-slot-players">${(group.participants || []).map(player => `<span class="best-slot-player ${player.isGM ? "gm-player" : ""}" title="${escapeHtml(player.playerName + (player.isGM ? "（GM）" : "") + (player.note ? "：" + player.note : ""))}">${escapeHtml(Array.from(player.playerName || "玩家")[0])}${player.note ? '<sup class="note-alert" aria-hidden="true">!</sup>' : ""}</span>`).join("")}</div></div>
     </details>`;
@@ -1438,12 +1442,18 @@ function playerResponseIds(player) {
   return [...new Set([...(player.responseIds || []), player.id].filter(Boolean))].sort();
 }
 
+function isSlotClosed(date, period, data = schedule) {
+  return (data?.scheduledGroups || []).some(group =>
+    group.date === date && group.period === period && (group.slotClosed === true || group.manual === true));
+}
+
 function slotHasScheduledGroup(slot) {
   return (schedule?.scheduledGroups || []).some(group => group.date === slot.date && group.period === slot.period);
 }
 
 function bestSlotPlayersMarkup(players = [], date, period) {
   const selected = selectedSlotIds(date, period);
+  const slotClosed = isSlotClosed(date, period);
   return `<span class="best-slot-players" aria-label="可以參加的人員">${players.map(player => {
     const hasNote = Boolean(player.note?.trim());
     const identity = `${player.playerName}${participantIsGM(player) ? "（GM）" : ""}`;
@@ -1458,7 +1468,7 @@ function bestSlotPlayersMarkup(players = [], date, period) {
     const classes = `best-slot-player ${participantIsGM(player) ? "gm-player" : ""} ${hasNote ? "has-note" : ""} ${marked ? "selected-participant" : slotHasSelection ? "unselected-participant" : ""}`;
     const contents = `${escapeHtml(Array.from(player.playerName || "玩家")[0])}${hasNote ? '<sup class="note-alert" aria-hidden="true">!</sup>' : ""}`;
     return canManageSchedule
-      ? `<button type="button" class="${classes} best-slot-player-button" data-date="${escapeHtml(date)}" data-period="${escapeHtml(period)}" data-response-ids="${escapeHtml(ids.join(","))}" ${booked ? 'disabled data-booked="true"' : ""} aria-pressed="${isSelected}" aria-label="${escapeHtml(label + "；點擊切換參團")}">${contents}</button>`
+      ? `<button type="button" class="${classes} best-slot-player-button" data-date="${escapeHtml(date)}" data-period="${escapeHtml(period)}" data-response-ids="${escapeHtml(ids.join(","))}" ${booked || slotClosed ? 'disabled data-booked="true"' : ""} aria-pressed="${isSelected}" aria-label="${escapeHtml(label + "；點擊切換參團")}">${contents}</button>`
       : `<span class="${classes}" aria-label="${escapeHtml(label)}">${contents}</span>`;
   }).join("")}</span>`;
 }
@@ -1474,7 +1484,7 @@ function bestMarkup(items, total, emptyMessage = "") {
       const selectionText = selectedPeople.length
         ? `・已選 ${selectedPlayers} 位玩家${selectedGMs ? `＋${selectedGMs} 位 GM` : ""}`
         : "";
-      return `<div class="best-slot ${slotHasScheduledGroup(item) ? "scheduled-slot" : ""}"><span class="best-slot-time">${escapeHtml(localizedSlotLabel(item.date, item.period))}</span><div class="best-slot-availability">${bestSlotPlayersMarkup(available, item.date, item.period)}<small>${scheduleRequiresGM() ? `${item.availableGMs.length} 位 GM 有空・` : ""}${item.count}／${total} 位玩家${Number(schedule.maxPlayers) > 0 && item.count > Number(schedule.maxPlayers) ? `・可成團，最多 ${Number(schedule.maxPlayers)} 人參加` : ""}${selectionText}${slotHasScheduledGroup(item) ? "・已有成團" : ""}</small></div></div>`;
+      return `<div class="best-slot ${slotHasScheduledGroup(item) ? "scheduled-slot" : ""}"><span class="best-slot-time">${escapeHtml(localizedSlotLabel(item.date, item.period))}</span><div class="best-slot-availability">${bestSlotPlayersMarkup(available, item.date, item.period)}<small>${scheduleRequiresGM() ? `${item.availableGMs.length} 位 GM 有空・` : ""}${item.count}／${total} 位玩家${Number(schedule.maxPlayers) > 0 && item.count > Number(schedule.maxPlayers) ? `・可成團，最多 ${Number(schedule.maxPlayers)} 人參加` : ""}${selectionText}${isSlotClosed(item.date, item.period) ? "・已確定，停止加入" : slotHasScheduledGroup(item) ? "・已有成團" : ""}</small></div></div>`;
     }).join("")
     : `<div class="empty small">${escapeHtml(emptyMessage || (scheduleRequiresGM() ? "目前沒有 GM 有空且玩家達到最低人數的時段。" : "目前沒有玩家達到最低成團人數的時段。"))}</div>`;
 }
@@ -1488,7 +1498,7 @@ function completedSelectionUpdates(data, participants, cutoff) {
   let added = 0;
   for (const [key, ids] of Object.entries(selectedParticipants)) {
     const [date, period] = key.split("__");
-    if (!Array.isArray(ids) || date < cutoff || !PERIOD_KEYS.includes(period) || data.lockedDates?.[date]) continue;
+    if (!Array.isArray(ids) || date < cutoff || !PERIOD_KEYS.includes(period) || data.lockedDates?.[date] || isSlotClosed(date, period, data)) continue;
     const occupied = new Set(scheduledGroups.filter(group => group.date === date && group.period === period)
       .flatMap(group => (group.participants || []).filter(player => !player.isGM).flatMap(player => player.responseIds || [])));
     const people = participants.filter(player =>
@@ -1563,6 +1573,7 @@ function bindBestSlotParticipants() {
           if (data.closed) throw Error("約團已結束");
           const all = { ...(data.selectedParticipants || {}) };
           const groups = [...(data.scheduledGroups || [])];
+          if (isSlotClosed(date, period, data)) throw Error("這個時段已確定團務，不能再加入人員或新增團務。");
           const candidates = uniqueSubmittedResponses(responses).filter(player => player.choices?.[date]?.includes(period));
           const clicked = candidates.find(player => playerResponseIds(player).some(id => ids.includes(id)));
           if (!clicked) throw Error("玩家已變更可用時間，請重新選取");
