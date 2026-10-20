@@ -572,3 +572,5 @@
 .confirmed-groups-heading h2 { margin:0; }
 .confirmed-groups-heading label { display:flex; align-items:center; gap:8px; margin:0; color:var(--muted); font-size:.8rem; }
 .confirmed-groups-heading select { width:auto; max-width:100%; margin:0; padding:7px 10px; font-size:.85rem; }
+
+#participant-hover-tooltip { width:max-content; max-width:min(520px,calc(100vw - 16px)); white-space:pre-line; text-align:left; }
