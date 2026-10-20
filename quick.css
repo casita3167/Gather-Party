@@ -556,3 +556,14 @@
 @media(max-width:520px) { .manual-group-person { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } #manual-group-dialog .manual-group-card { padding:16px; } }
 
 .group-gm-names { color:#856300; font-size:.76rem; line-height:1.5; overflow-wrap:anywhere; }
+
+.schedule-left-column { min-width:0; display:grid; gap:16px; align-content:start; }
+.schedule-left-column > .confirmed-groups-card { margin:0; }
+.confirmed-groups-card > h2 { margin-bottom:12px; }
+.confirmed-groups-card > .best-slot-filter-clear { margin:0 0 10px; }
+.confirmed-groups-card #scheduled-groups { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr)); gap:12px; min-width:0; }
+.confirmed-groups-card .scheduled-group { margin:0; min-width:0; }
+.confirmed-groups-card .scheduled-group > summary > b { font-size:1rem; }
+.confirmed-groups-card .group-summary-time,.confirmed-groups-card .group-gm-names { font-size:.85rem; }
+.confirmed-groups-card .best-slot-players { justify-content:flex-start; gap:7px; padding:3px; }
+.confirmed-groups-card .empty { grid-column:1 / -1; }
