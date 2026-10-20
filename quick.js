@@ -43,6 +43,7 @@ let managementShortUrl = "";
 let managementShortTitle = "";
 let managementPreviewVersion = 0;
 let bestSlotSort = "count";
+let scheduledGroupSort = "date-asc";
 let scheduledGroupStatusTimer = null;
 const expandedScheduledGroups = new Set();
 let bestSlotExpiryTimer = null;
@@ -971,7 +972,7 @@ function renderSchedule(mineData) {
     ${schedule.note ? `<p class="quick-note">${escapeHtml(schedule.note)}</p>` : ""}
     <p id="schedule-status" role="status"></p><div class="management-actions"><button class="button secondary" id="export-results" type="button">匯出約團結果</button>${canManageSchedule ? `<button class="button reject" id="close-schedule" type="button">結束約團</button>` : ""}</div>
     <div class="schedule-grid"><div class="schedule-left-column"><form id="response-form" class="quick-card"><h2>填寫我的時間</h2><p>先從月曆點選你要填寫的日期，再選早上、下午、晚上、△ 不確定或 X。△ 表示當天可能有空、時段未定，不計入確定成團人數。儲存後仍可隨時回來修改日期。</p>${periodLegendMarkup(periodRanges)}<label>玩家名稱<input name="playerName" maxlength="30" value="${escapeHtml(mineData?.playerName || localStorage.getItem("gather-party-player") || "")}" required></label>${gmClaimMarkup(responses.find(r => r.id === user?.uid)?.isGM === true)}<div class="date-picker-head"><h3 id="response-month-title">${responseMonthCursor.getFullYear()} 年 ${responseMonthCursor.getMonth() + 1} 月</h3><div class="date-picker-nav"><button class="mini-button" id="response-prev" type="button">‹</button><button class="mini-button" id="response-today" type="button">今</button><button class="mini-button" id="response-next" type="button">›</button></div></div><div class="date-preset-bar" aria-label="快速選擇本月日期"><span>快速選日期</span><button class="date-preset-button" type="button" data-date-preset="weekdays">週一～週五</button><button class="date-preset-button" type="button" data-date-preset="weekends">週末</button><button class="date-preset-button" type="button" data-date-preset="all">全月</button><button class="date-preset-button clear" type="button" data-date-preset="clear">清除本月</button></div><div id="response-calendar">${responseCalendarMarkup()}</div><section class="batch-choice-panel"><div><h3>批次設定時段</h3><p id="batch-choice-count">目前批次 0 天</p><small>套用時段後按「儲存時間」，日期會收進編號批次；接著即可繼續選下一批。</small></div><div class="batch-choice-actions">${PERIOD_KEYS.map(period => `<button class="choice-button batch-choice-button" type="button" data-batch-choice="${period}">${period}</button>`).join("")}<button class="choice-button uncertain batch-choice-button" type="button" data-batch-choice="△" title="當天可能有空，時段尚未確定" aria-label="不確定">△</button><button class="choice-button no batch-choice-button" type="button" data-batch-choice="X">X</button><button class="choice-button clear batch-choice-button" type="button" data-batch-choice="clear">清除時段</button></div></section><details class="choice-details" id="choice-details" ${choices.size <= 3 ? "open" : ""}><summary>逐日調整 <span id="choice-summary-count">${choices.size} 天</span></summary><div class="choice-list" id="response-choice-list">${responseChoiceListMarkup(periodRanges)}</div></details><label>備註<textarea name="note" maxlength="500" placeholder="例如：晚上九點後才有空、這天可能需要再確認">${escapeHtml(mineData?.note || "")}</textarea></label><div class="quick-form-actions"><span class="muted">至少選擇一個日期，且每個日期都要選時段、△ 不確定或 X</span><button class="button" type="submit">儲存時間</button></div></form>
-      <section class="quick-card scheduled-groups-section confirmed-groups-card"><h2>確定成團</h2>${canManageSchedule && !schedule?.closed ? '<button type="button" class="best-slot-filter-clear" id="add-manual-group">＋ 手動新增團務</button>' : ""}<div id="scheduled-groups">${scheduledGroupsMarkup()}</div></section></div>
+      <section class="quick-card scheduled-groups-section confirmed-groups-card"><div class="confirmed-groups-heading"><h2>確定成團</h2><label>排序方式<select id="scheduled-group-sort"><option value="date-asc">時間由近到遠</option><option value="date-desc">時間由遠到近</option><option value="created-desc">最新建立</option></select></label></div>${canManageSchedule && !schedule?.closed ? '<button type="button" class="best-slot-filter-clear" id="add-manual-group">＋ 手動新增團務</button>' : ""}<div id="scheduled-groups">${scheduledGroupsMarkup()}</div></section></div>
       <aside class="quick-card"><h2>可成團時段</h2>${canManageSchedule ? '<p class="best-slot-selection-hint">點擊人頭選人，玩家達上限即存成一團；需 GM 填表的團務也要選取 GM。存成一團後可繼續安排下一團，同時段玩家不重複入團。未設上限時以最低成團人數存團。</p>' : ""}<p id="response-count">${countedPlayers(submitted).length} 位玩家已填寫・${escapeHtml(gmStatusText(submitted))}・${playerRangeLabel()}</p>${bestSlotControlsMarkup(submitted)}<div class="best-slots" id="best-slots">${bestMarkup(best, countedPlayers(submitted).length, bestSlotPlayerKeys.size ? "目前沒有所有指定玩家都有空且符合成團條件的時段。" : "")}</div><div id="clone-schedule-action">${cloneScheduleActionMarkup()}</div><label>玩家填表連結<div class="share-box"><input id="player-link" readonly value="${escapeHtml(playerLink)}" aria-label="玩家填表短網址"><button class="button secondary" id="copy-quick" type="button">複製</button></div></label>${canManageSchedule ? `<div class="management-box"><h3>私人管理連結</h3><p>換裝置時用這條隨機短網址取回管理權限，請勿傳給玩家。</p>${privateLink ? `<div class="share-box"><input id="manager-link" readonly value="${escapeHtml(privateLink)}" aria-label="私人管理短網址"><button class="button secondary" id="copy-manager" type="button">複製</button></div>` : '<p class="muted">私人管理連結建立中。</p>'}<div class="management-actions"><button class="button secondary full" id="lock-schedule-dates" type="button">🔒 設定不開放日期</button><button class="button secondary full" id="edit-current-schedule" type="button">編輯約團設定</button><button class="button reject full" id="delete-current-schedule" type="button">刪除這張約團表</button></div></div>` : ""}</aside>
     </div>
     <section class="quick-card overview"><h2>玩家時間一覽</h2><p>每位玩家的選擇與備註會集中顯示在這裡。</p>${periodLegendMarkup(periodRanges)}<div id="overview-content">${overviewMarkup(submitted)}</div></section>
@@ -1222,6 +1223,13 @@ function scheduledGroupTitle(group, index) {
 }
 
 
+function manualGroupTimeRange(start, end) {
+  const valid = value => /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(value);
+  if (!valid(start) || !(valid(end) || end === "24:00")) throw Error("請以 HH:MM 輸入時間，例如 20:00；結束可填 24:00。");
+  if (start === end) throw Error("開始與結束時間不能相同。");
+  return start + "～" + end;
+}
+
 function manualGroupParticipants(rows) {
   const seen = new Set();
   return rows.map(row => {
@@ -1245,7 +1253,9 @@ function openManualGroupDialog() {
   dialog.innerHTML = `<form class="dialog-card manual-group-card">
     <div class="dialog-head"><h2 id="manual-group-title">手動新增團務</h2><button type="button" class="icon-button" data-close aria-label="關閉">×</button></div>
     <label>團務名稱<input name="groupTitle" maxlength="80" required placeholder="例如：符咒學課程"></label>
-    <div class="form-grid"><label>日期<input name="groupDate" type="date" required value="${taiwanTodayKey(scheduleTimeZone())}"></label><label>時段<select name="groupPeriod">${PERIOD_KEYS.map(period => `<option value="${period}">${period}（${escapeHtml(schedule.periods?.[period] || "")}）</option>`).join("")}</select></label></div>
+    <div class="form-grid"><label>日期<input name="groupDate" type="date" required value="${taiwanTodayKey(scheduleTimeZone())}"></label><label>鎖定時段<select name="groupPeriod">${PERIOD_KEYS.map(period => `<option value="${period}">${period}（${escapeHtml(schedule.periods?.[period] || "")}）</option>`).join("")}</select></label></div>
+    <div class="form-grid"><label>開始時間<input name="groupStart" type="text" inputmode="numeric" maxlength="5" placeholder="20:00" required></label><label>結束時間<input name="groupEnd" type="text" inputmode="numeric" maxlength="5" placeholder="23:00 或 24:00" required></label></div>
+    <p class="muted">時間以團務時區為準，以 HH:MM 輸入；結束早於開始代表跨到隔天。鎖定時段用來指定停止加入的早上、下午或晚上。</p>
     <p class="muted">日期與時段以團務時區為準。可選已填表成員，或直接輸入未填表人員；勾選 GM 後會以黃色泡泡顯示。儲存後此時段停止加入，取消該團才會重新開放。</p>
     <div class="manual-group-roster"></div>
     <button type="button" class="button secondary" data-add-person>＋ 新增成員</button>
@@ -1307,6 +1317,7 @@ function openManualGroupDialog() {
       const title = form.elements.groupTitle.value.trim();
       const date = form.elements.groupDate.value;
       const period = form.elements.groupPeriod.value;
+      const timeRange = manualGroupTimeRange(form.elements.groupStart.value.trim(), form.elements.groupEnd.value.trim());
       const people = manualGroupParticipants(readRows());
       if (!title || title.length > 80) throw Error("請填寫 1～80 字的團務名稱。");
       if (!date || !PERIOD_KEYS.includes(period)) throw Error("請選擇日期與時段。");
@@ -1321,7 +1332,7 @@ function openManualGroupDialog() {
         const data = snap.data();
         if (data.closed) throw Error("這張約團表已結束。");
         if (Object.hasOwn(data.lockedDates || {}, date)) throw Error("該日期不開放，請先解除鎖定。");
-        const group = {id:groupId, title, date, period, periods:data.periods || {}, timeZone:data.timeZone || DEFAULT_TIME_ZONE, participants:people, createdAt:new Date().toISOString(), manual:true, slotClosed:true};
+        const group = {id:groupId, title, date, period, periods:{...(data.periods || {}), [period]:timeRange}, timeZone:data.timeZone || DEFAULT_TIME_ZONE, participants:people, createdAt:new Date().toISOString(), manual:true, slotClosed:true};
         if (scheduledGroupHasEnded(group)) throw Error("此時段已結束，請選擇其他時間。");
         const groups = data.scheduledGroups || [];
         if (isSlotClosed(date, period, data)) throw Error("這個時段已確定團務，不能再新增。");
@@ -1349,10 +1360,20 @@ function openManualGroupDialog() {
   dialog.showModal();
 }
 
+function sortedScheduledGroupEntries(groups, sort = scheduledGroupSort) {
+  const startEpoch = group => localizedPeriodInfo(group.date, group.period, group.periods || schedule?.periods || {}, group.timeZone || scheduleTimeZone()).startEpoch
+    ?? zonedDateTimeEpoch(group.date, 0, 0, group.timeZone || scheduleTimeZone());
+  return groups.map((group, index) => ({group, index})).sort((a,b) => {
+    if (sort === "created-desc") return (Date.parse(b.group.createdAt) || 0) - (Date.parse(a.group.createdAt) || 0) || b.index - a.index;
+    const difference = startEpoch(a.group) - startEpoch(b.group);
+    return (sort === "date-desc" ? -difference : difference) || a.index - b.index;
+  });
+}
+
 function scheduledGroupsMarkup() {
   const groups = Array.isArray(schedule?.scheduledGroups) ? schedule.scheduledGroups : [];
   if (!groups.length) return '<div class="empty small">尚未排定團務。選取玩家達到上限即可存成一團。</div>';
-  return groups.map((group, index) => {
+  return sortedScheduledGroupEntries(groups).map(({group, index}) => {
     const ended = scheduledGroupHasEnded(group);
     const title = scheduledGroupTitle(group, index);
     const key = `${schedule.id}:${group.id}`;
@@ -1366,6 +1387,11 @@ function scheduledGroupsMarkup() {
 }
 
 function refreshScheduledGroups() {
+  const sortSelect = document.querySelector("#scheduled-group-sort");
+  if (sortSelect) {
+    sortSelect.value = scheduledGroupSort;
+    sortSelect.onchange = () => { scheduledGroupSort = sortSelect.value; refreshScheduledGroups(); };
+  }
   clearTimeout(scheduledGroupStatusTimer);
   scheduledGroupStatusTimer = null;
   const container = document.querySelector("#scheduled-groups");
