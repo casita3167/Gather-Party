@@ -773,7 +773,7 @@ function scheduleBestSlotExpiry() {
 }
 
 function bindBestSlotControls() {
-  document.querySelector('#add-manual-group')?.addEventListener('click', openManualGroupDialog);
+  document.querySelector('#add-manual-group')?.addEventListener('click', () => openManualGroupDialog());
   scheduleBestSlotExpiry();
   document.querySelector("#best-slot-sort")?.addEventListener("change", event => {
     bestSlotSort = event.currentTarget.value;
@@ -1242,7 +1242,7 @@ function manualGroupParticipants(rows) {
   });
 }
 
-function openManualGroupDialog() {
+function openManualGroupDialog(existingGroup = null) {
   if (!canManageSchedule || !routeInfo().token || schedule?.closed) return;
   if (document.querySelector("#manual-group-dialog")) return;
   const scheduleId = schedule.id;
@@ -1251,7 +1251,7 @@ function openManualGroupDialog() {
   dialog.id = "manual-group-dialog";
   dialog.setAttribute("aria-labelledby", "manual-group-title");
   dialog.innerHTML = `<form class="dialog-card manual-group-card">
-    <div class="dialog-head"><h2 id="manual-group-title">手動新增團務</h2><button type="button" class="icon-button" data-close aria-label="關閉">×</button></div>
+    <div class="dialog-head"><h2 id="manual-group-title">${existingGroup ? "修改團務資訊" : "手動新增團務"}</h2><button type="button" class="icon-button" data-close aria-label="關閉">×</button></div>
     <label>團務名稱<input name="groupTitle" maxlength="80" required placeholder="例如：符咒學課程"></label>
     <div class="form-grid"><label>日期<input name="groupDate" type="date" required value="${taiwanTodayKey(scheduleTimeZone())}"></label><label>鎖定時段<select name="groupPeriod">${PERIOD_KEYS.map(period => `<option value="${period}">${period}（${escapeHtml(schedule.periods?.[period] || "")}）</option>`).join("")}</select></label></div>
     <div class="form-grid"><label>開始時間<input name="groupStart" type="text" inputmode="numeric" maxlength="5" placeholder="20:00" required></label><label>結束時間<input name="groupEnd" type="text" inputmode="numeric" maxlength="5" placeholder="23:00 或 24:00" required></label></div>
@@ -1274,8 +1274,8 @@ function openManualGroupDialog() {
       return {
         playerName:row.querySelector("[data-name]").value,
         isGM:row.querySelector("[data-gm]").checked,
-        responseIds:original ? playerResponseIds(original) : [],
-        note:original?.note || ""
+        responseIds:original ? playerResponseIds(original) : (row.savedParticipant?.responseIds || []),
+        note:original?.note || row.savedParticipant?.note || ""
       };
     });
   }
@@ -1285,14 +1285,23 @@ function openManualGroupDialog() {
       `<span class="best-slot-player ${row.isGM ? "gm-player" : ""}" title="${escapeHtml(row.playerName + (row.isGM ? "（GM）" : ""))}">${escapeHtml(Array.from(row.playerName.trim())[0])}</span>`
     ).join("");
   }
-  function addRow() {
+  function addRow(savedParticipant = null) {
     const row = document.createElement("div");
     row.className = "manual-group-person";
     row.innerHTML = `<label>選取成員<select data-roster><option value="">自行輸入名稱</option>${roster.map((player,index) => `<option value="${index}">${escapeHtml(player.playerName)}${participantIsGM(player) ? "（GM）" : ""}</option>`).join("")}</select></label><label>成員名稱<input data-name maxlength="30" required placeholder="玩家或 GM 名稱"></label><label class="manual-group-gm"><input type="checkbox" data-gm><span>GM</span></label><button type="button" class="mini-button" data-remove aria-label="移除此成員">×</button>`;
     rows.append(row);
+    row.savedParticipant = savedParticipant;
+    if (savedParticipant) {
+      const index = roster.findIndex(player => playerResponseIds(player).some(id => (savedParticipant.responseIds || []).includes(id)));
+      if (index >= 0) row.querySelector("[data-roster]").value = String(index);
+      row.querySelector("[data-name]").value = savedParticipant.playerName || "";
+      row.querySelector("[data-name]").readOnly = index >= 0;
+      row.querySelector("[data-gm]").checked = savedParticipant.isGM === true;
+    }
     row.querySelector("[data-roster]").onchange = event => {
       const selected = event.target.value;
       const original = selected === "" ? null : roster[Number(selected)];
+      row.savedParticipant = null;
       row.querySelector("[data-name]").value = original?.playerName || "";
       row.querySelector("[data-name]").readOnly = Boolean(original);
       row.querySelector("[data-gm]").checked = original ? original.isGM === true : false;
@@ -1302,11 +1311,24 @@ function openManualGroupDialog() {
     row.addEventListener("input", preview);
     row.addEventListener("change", preview);
   }
-  dialog.querySelector("[data-add-person]").onclick = addRow;
+  dialog.querySelector("[data-add-person]").onclick = () => addRow();
   dialog.querySelectorAll("[data-close]").forEach(button => button.onclick = () => {if (!busy) dialog.close();});
   dialog.addEventListener("cancel", event => {if (busy) event.preventDefault();});
   dialog.addEventListener("close", () => dialog.remove(), {once:true});
-  addRow();
+  if (existingGroup) {
+    const index = (schedule.scheduledGroups || []).findIndex(group => group.id === existingGroup.id);
+    form.elements.groupTitle.value = scheduledGroupTitle(existingGroup, index);
+    form.elements.groupDate.value = existingGroup.date;
+    form.elements.groupPeriod.value = existingGroup.period;
+    const parsed = parsePeriodRange((existingGroup.periods || schedule.periods || {})[existingGroup.period] || "");
+    if (parsed) {
+      form.elements.groupStart.value = String(parsed.startHour).padStart(2,"0") + ":" + String(parsed.startMinute).padStart(2,"0");
+      form.elements.groupEnd.value = String(parsed.endHour).padStart(2,"0") + ":" + String(parsed.endMinute).padStart(2,"0");
+    }
+    (existingGroup.participants || []).forEach(person => addRow(person));
+    form.querySelector('button[type="submit"]').textContent = "儲存修改";
+  } else addRow();
+  preview();
   form.onsubmit = async event => {
     event.preventDefault();
     if (busy) return;
@@ -1324,7 +1346,7 @@ function openManualGroupDialog() {
       if (!people.length) throw Error("請至少加入一位成員。");
       busy = true;
       form.querySelectorAll("button,input,select").forEach(control => {control.disabled = true;});
-      const groupId = crypto.randomUUID();
+      const groupId = existingGroup?.id || crypto.randomUUID();
       await runTransaction(db, async tx => {
         const ref = doc(db, "quickSchedules", scheduleId);
         const snap = await tx.get(ref);
@@ -1332,12 +1354,16 @@ function openManualGroupDialog() {
         const data = snap.data();
         if (data.closed) throw Error("這張約團表已結束。");
         if (Object.hasOwn(data.lockedDates || {}, date)) throw Error("該日期不開放，請先解除鎖定。");
-        const group = {id:groupId, title, date, period, periods:{...(data.periods || {}), [period]:timeRange}, timeZone:data.timeZone || DEFAULT_TIME_ZONE, participants:people, createdAt:new Date().toISOString(), manual:true, slotClosed:true};
+        const currentGroup = existingGroup ? (data.scheduledGroups || []).find(item => item.id === groupId) : null;
+        if (existingGroup && !currentGroup) throw Error("此團務已被取消，請關閉視窗後重新確認。");
+        if (existingGroup && JSON.stringify(currentGroup) !== JSON.stringify(existingGroup)) throw Error("團務已在其他視窗修改，請重新開啟後再編輯。");
+        const group = {...(currentGroup || {}), id:groupId, title, date, period, periods:{...(data.periods || {}), [period]:timeRange}, timeZone:currentGroup?.timeZone || data.timeZone || DEFAULT_TIME_ZONE, participants:people, createdAt:currentGroup?.createdAt || new Date().toISOString(), updatedAt:new Date().toISOString(), manual:true, slotClosed:true};
         if (scheduledGroupHasEnded(group)) throw Error("此時段已結束，請選擇其他時間。");
         const groups = data.scheduledGroups || [];
-        if (isSlotClosed(date, period, data)) throw Error("這個時段已確定團務，不能再新增。");
+        const otherGroups = groups.filter(item => item.id !== groupId);
+        if (isSlotClosed(date, period, {...data, scheduledGroups:otherGroups})) throw Error("這個時段已確定團務，不能再新增。");
         for (const person of people.filter(person => !person.isGM)) {
-          const conflict = groups.some(existing => existing.date === date && existing.period === period && (existing.participants || []).some(member => !member.isGM && (
+          const conflict = otherGroups.some(existing => existing.date === date && existing.period === period && (existing.participants || []).some(member => !member.isGM && (
             normalizedPlayerName(member.playerName) === normalizedPlayerName(person.playerName)
             || (member.responseIds || []).some(id => person.responseIds.includes(id))
           )));
@@ -1345,10 +1371,10 @@ function openManualGroupDialog() {
         }
         const selectedParticipants = {...(data.selectedParticipants || {})};
         delete selectedParticipants[slotSelectionKey(date, period)];
-        tx.update(ref, {scheduledGroups:[...groups,group], selectedParticipants});
+        tx.update(ref, {scheduledGroups:existingGroup ? groups.map(item => item.id === groupId ? group : item) : [...groups,group], selectedParticipants});
       });
       dialog.close();
-      toast("已新增團務");
+      toast(existingGroup ? "團務資訊已更新" : "已新增團務");
     } catch (error) {
       console.error(error);
       message.textContent = error.code === "permission-denied" ? "無法儲存，請確認私人管理連結有效。" : error.message || "儲存失敗，請稍後再試。";
@@ -1380,7 +1406,7 @@ function scheduledGroupsMarkup() {
     const gmNames = (group.participants || []).filter(person => person.isGM).map(person => person.playerName).join("、");
     return `<details class="scheduled-group ${ended ? "ended" : ""}" data-group-expand="${escapeHtml(key)}" ${expandedScheduledGroups.has(key) ? "open" : ""}>
       <summary><b>${escapeHtml(title)}${ended ? ' <span class="group-ended-label">已結團</span>' : ""}</b><span class="group-summary-time">${escapeHtml(localizedSlotLabel(group.date, group.period, group.periods || schedule.periods, group.timeZone || scheduleTimeZone()))}</span>${gmNames ? `<span class="group-gm-names">GM：${escapeHtml(gmNames)}</span>` : ""}</summary>
-      <div class="scheduled-group-body">${canManageSchedule ? `<div class="group-edit-actions"><button type="button" class="best-slot-filter-clear" data-rename-group="${escapeHtml(group.id)}">修改團名</button><button type="button" class="best-slot-filter-clear" data-cancel-group="${escapeHtml(group.id)}">取消此團</button></div>` : ""}
+      <div class="scheduled-group-body">${canManageSchedule ? `<div class="group-edit-actions"><button type="button" class="best-slot-filter-clear" data-edit-group="${escapeHtml(group.id)}" ${schedule?.closed ? "disabled" : ""}>修改團務資訊</button><button type="button" class="best-slot-filter-clear" data-cancel-group="${escapeHtml(group.id)}">取消此團</button></div>` : ""}
       <div class="best-slot-players">${(group.participants || []).map(player => `<span class="best-slot-player ${player.isGM ? "gm-player" : ""}" title="${escapeHtml(player.playerName + (player.isGM ? "（GM）" : "") + (player.note ? "：" + player.note : ""))}">${escapeHtml(Array.from(player.playerName || "玩家")[0])}${player.note ? '<sup class="note-alert" aria-hidden="true">!</sup>' : ""}</span>`).join("")}</div></div>
     </details>`;
   }).join("");
@@ -1403,6 +1429,13 @@ function refreshScheduledGroups() {
       if (details.open) expandedScheduledGroups.add(details.dataset.groupExpand);
       else expandedScheduledGroups.delete(details.dataset.groupExpand);
     });
+  });
+  container.querySelectorAll("[data-edit-group]").forEach(button => {
+    button.onclick = () => {
+      if (!canManageSchedule || !routeInfo().token || schedule?.closed) return;
+      const group = (schedule.scheduledGroups || []).find(item => item.id === button.dataset.editGroup);
+      if (group) openManualGroupDialog(group);
+    };
   });
   container.querySelectorAll("[data-rename-group]").forEach(button => {
     button.onclick = async () => {
