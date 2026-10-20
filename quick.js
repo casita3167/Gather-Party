@@ -144,9 +144,14 @@ function timeZoneOptionsMarkup(selected = DEFAULT_TIME_ZONE) {
 }
 
 function parsePeriodRange(value = "") {
-  const match = String(value).match(/(\d{1,2}):(\d{2})\s*[～~–—-]\s*(\d{1,2}):(\d{2})/);
+  const match = String(value).trim().match(/^(\d{1,2}):(\d{2})(?:\s*[～~–—-]\s*(\d{1,2}):(\d{2}))?$/);
   if (!match) return null;
-  return { startHour: Number(match[1]), startMinute: Number(match[2]), endHour: Number(match[3]), endMinute: Number(match[4]) };
+  const startHour = Number(match[1]), startMinute = Number(match[2]);
+  const hasEndTime = match[3] !== undefined;
+  const endHour = hasEndTime ? Number(match[3]) : 24;
+  const endMinute = hasEndTime ? Number(match[4]) : 0;
+  if (startHour > 23 || startMinute > 59 || endHour > 24 || endMinute > 59 || (endHour === 24 && endMinute !== 0)) return null;
+  return { startHour, startMinute, endHour, endMinute, hasEndTime };
 }
 
 function addDateDays(date, days) {
@@ -195,7 +200,7 @@ function localizedPeriodInfo(date, period, ranges = schedule?.periods || {}, sou
     timeZone: localZone, month: "numeric", day: "numeric",
     hour: "2-digit", minute: "2-digit", hourCycle: "h23"
   }).format(new Date(endEpoch));
-  return { label: `${start}～${end}`, startEpoch, endEpoch };
+  return { label: parsed.hasEndTime ? `${start}～${end}` : `${start} 起`, startEpoch, endEpoch, hasEndTime:parsed.hasEndTime };
 }
 
 function localizedSlotLabel(date, period, ranges = schedule?.periods || {}, sourceTimeZone = scheduleTimeZone()) {
@@ -223,17 +228,13 @@ function localizedGroupSummary(group) {
   const periods = PERIOD_KEYS.filter(period => group.values?.includes(period));
   return periods.map(period => {
     const first = localizedPeriodInfo(group.start, period);
-    if (!first.startEpoch || !first.endEpoch) return `${period} ${first.label}`;
-    if (group.start === group.end) return `${period} ${first.label}`;
-    const last = localizedPeriodInfo(group.end, period);
+    if (!first.startEpoch) return period + " " + first.label;
     const firstStart = viewerClockLabel(first.startEpoch);
-    const firstEnd = viewerClockLabel(first.endEpoch);
+    if (group.start === group.end) return period + " " + viewerDateLabel(first.startEpoch) + " " + firstStart + " 起";
+    const last = localizedPeriodInfo(group.end, period);
     const lastStart = viewerClockLabel(last.startEpoch);
-    const lastEnd = viewerClockLabel(last.endEpoch);
-    if (firstStart === lastStart && firstEnd === lastEnd) {
-      return `${period} ${viewerDateLabel(first.startEpoch)}～${viewerDateLabel(last.startEpoch)}，每日 ${firstStart}～${firstEnd}`;
-    }
-    return `${period} ${first.label}；末日 ${last.label}（期間遇時區切換）`;
+    if (firstStart === lastStart) return period + " " + viewerDateLabel(first.startEpoch) + "～" + viewerDateLabel(last.startEpoch) + "，每日 " + firstStart + " 起";
+    return period + " " + viewerDateLabel(first.startEpoch) + " " + firstStart + " 起；末日 " + viewerDateLabel(last.startEpoch) + " " + lastStart + " 起（期間遇時區切換）";
   }).join("；");
 }
 
@@ -256,7 +257,7 @@ function renderCreate() {
         <label>給玩家的說明<textarea name="note" maxlength="800" placeholder="預計遊玩的系統、時數或其他提醒"></textarea></label>
         <label>團務時區<select name="timeZone" required>${timeZoneOptionsMarkup(DEFAULT_TIME_ZONE)}</select><small>所有日期以此時區為共同基準；玩家看到的時段會依自己的裝置時區自動換算。</small></label>
         <div class="form-grid"><label>最低成團人數<input name="minPlayers" type="number" min="1" max="20" value="4" required></label><label>最多參加人數（選填）<input name="maxPlayers" type="number" min="1" max="20" value="6" placeholder="不設上限"></label></div><label class="no-gm-toggle"><input name="noGM" type="checkbox"><span><b>沒有 GM 填表</b><small>啟用後，不要求 GM 提供時段，只比對玩家有空時間。</small></span></label><small class="muted">超過參加上限仍保留時段，由團務管理者協調名單。</small>
-        <h3>時段範圍</h3><div class="period-settings"><label class="period-setting"><span>早上</span><input name="morning" value="09:00～12:00" required></label><label class="period-setting"><span>下午</span><input name="afternoon" value="13:00～18:00" required></label><label class="period-setting"><span>晚上</span><input name="evening" value="20:30～24:00" required></label></div>
+        <h3>時段範圍</h3><p class="muted">只需填開始時間，例如 09:00；結束時間選填，也可填 09:00～12:00。未填結束時間時，隔日視為過期。</p><div class="period-settings"><label class="period-setting"><span>早上</span><input name="morning" value="09:00" placeholder="開始必填，結束選填" required></label><label class="period-setting"><span>下午</span><input name="afternoon" value="13:00" placeholder="開始必填，結束選填" required></label><label class="period-setting"><span>晚上</span><input name="evening" value="20:30" placeholder="開始必填，結束選填" required></label></div>
         <p class="quick-note">玩家只會看到「早上／下午／晚上／△ 不確定／X」五個按鈕；滑鼠移到時段上即可查看你設定的範圍。</p>
         <section aria-label="不開放日期"><h3>不開放日期（選填）</h3><p>點選要鎖定的日期，再點一次即可取消。建立後，只能透過私人管理連結修改。</p><div class="date-picker-head"><h3 id="draft-lock-month"></h3><div class="date-picker-nav"><button type="button" class="mini-button" id="draft-lock-prev" aria-label="上個月">‹</button><button type="button" class="mini-button" id="draft-lock-next" aria-label="下個月">›</button></div></div><div id="draft-lock-calendar"></div><p id="draft-lock-count" role="status"></p></section>
         <button class="button full" type="submit">建立快速約團表</button>
@@ -1338,7 +1339,7 @@ function openManualGroupDialog(existingGroup = null) {
     const parsed = parsePeriodRange((existingGroup.periods || schedule.periods || {})[existingGroup.period] || "");
     if (parsed) {
       form.elements.groupStart.value = String(parsed.startHour).padStart(2,"0") + ":" + String(parsed.startMinute).padStart(2,"0");
-      form.elements.groupEnd.value = existingGroup.noEndTime ? "" : String(parsed.endHour).padStart(2,"0") + ":" + String(parsed.endMinute).padStart(2,"0");
+      form.elements.groupEnd.value = existingGroup.noEndTime || !parsed.hasEndTime ? "" : String(parsed.endHour).padStart(2,"0") + ":" + String(parsed.endMinute).padStart(2,"0");
     }
     (existingGroup.participants || []).forEach(person => addRow(person));
     form.querySelector('button[type="submit"]').textContent = "儲存修改";
