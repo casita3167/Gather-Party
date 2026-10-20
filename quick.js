@@ -1419,7 +1419,6 @@ function sortedScheduledGroupEntries(groups, sort = scheduledGroupSort) {
 function scheduledGroupTimeLabel(group) {
   const ranges = group.periods || schedule?.periods || {};
   const zone = group.timeZone || scheduleTimeZone();
-  if (!group.noEndTime) return localizedSlotLabel(group.date, group.period, ranges, zone);
   const info = localizedPeriodInfo(group.date, group.period, ranges, zone);
   if (info.startEpoch == null) return group.date + "・" + group.period;
   const start = new Intl.DateTimeFormat("zh-TW", {
