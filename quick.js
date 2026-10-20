@@ -768,7 +768,7 @@ function scheduleBestSlotExpiry() {
   bestSlotExpiryTimer = null;
   if (!schedule || !document.querySelector("#best-slots")) return;
   const now = Date.now();
-  const ends = bestSlots(uniqueSubmittedResponses(responses)).map(scheduledGroupEndEpoch).filter(end => end > now);
+  const ends = bestSlots(uniqueSubmittedResponses(responses)).map(bestSlotEndEpoch).filter(end => end > now);
   if (ends.length) bestSlotExpiryTimer = setTimeout(
     refreshBestSlotResults, Math.min(2147483647, Math.max(1, Math.min(...ends) - now + 50))
   );
@@ -1580,6 +1580,22 @@ function bestSlotPlayersMarkup(players = [], date, period) {
   }).join("")}</span>`;
 }
 
+function scheduledGroupsForSlot(slot) {
+  return (schedule?.scheduledGroups || []).filter(group => group.date === slot.date && group.period === slot.period);
+}
+
+function bestSlotTimeLabel(slot, now = Date.now()) {
+  const groups = scheduledGroupsForSlot(slot);
+  if (!groups.length) return localizedSlotLabel(slot.date, slot.period);
+  const active = groups.filter(group => !scheduledGroupHasEnded(group, now));
+  return [...new Set((active.length ? active : groups).map(scheduledGroupTimeLabel))].join("／");
+}
+
+function bestSlotEndEpoch(slot) {
+  const groups = scheduledGroupsForSlot(slot);
+  return groups.length ? Math.max(...groups.map(scheduledGroupEndEpoch)) : scheduledGroupEndEpoch(slot);
+}
+
 function bestMarkup(items, total, emptyMessage = "") {
   return items.length
     ? [...items.filter(item => !slotHasScheduledGroup(item)).slice(0, 10), ...items.filter(slotHasScheduledGroup)].map(item => {
@@ -1591,7 +1607,7 @@ function bestMarkup(items, total, emptyMessage = "") {
       const selectionText = selectedPeople.length
         ? `・已選 ${selectedPlayers} 位玩家${selectedGMs ? `＋${selectedGMs} 位 GM` : ""}`
         : "";
-      return `<div class="best-slot ${slotHasScheduledGroup(item) ? "scheduled-slot" : ""}"><span class="best-slot-time">${escapeHtml(localizedSlotLabel(item.date, item.period))}</span><div class="best-slot-availability">${bestSlotPlayersMarkup(available, item.date, item.period)}<small>${scheduleRequiresGM() ? `${item.availableGMs.length} 位 GM 有空・` : ""}${item.count}／${total} 位玩家${Number(schedule.maxPlayers) > 0 && item.count > Number(schedule.maxPlayers) ? `・可成團，最多 ${Number(schedule.maxPlayers)} 人參加` : ""}${selectionText}${isSlotClosed(item.date, item.period) ? "・已確定，停止加入" : slotHasScheduledGroup(item) ? "・已有成團" : ""}</small></div></div>`;
+      return `<div class="best-slot ${slotHasScheduledGroup(item) ? "scheduled-slot" : ""}"><span class="best-slot-time">${escapeHtml(bestSlotTimeLabel(item))}</span><div class="best-slot-availability">${bestSlotPlayersMarkup(available, item.date, item.period)}<small>${scheduleRequiresGM() ? `${item.availableGMs.length} 位 GM 有空・` : ""}${item.count}／${total} 位玩家${Number(schedule.maxPlayers) > 0 && item.count > Number(schedule.maxPlayers) ? `・可成團，最多 ${Number(schedule.maxPlayers)} 人參加` : ""}${selectionText}${isSlotClosed(item.date, item.period) ? "・已確定，停止加入" : slotHasScheduledGroup(item) ? "・已有成團" : ""}</small></div></div>`;
     }).join("")
     : `<div class="empty small">${escapeHtml(emptyMessage || (scheduleRequiresGM() ? "目前沒有 GM 有空且玩家達到最低人數的時段。" : "目前沒有玩家達到最低成團人數的時段。"))}</div>`;
 }
@@ -2049,7 +2065,7 @@ function bestSlots(participants) {
   const minimum = Number(schedule.minPlayers || 1);
   const now = Date.now();
   const enough = slots.filter(item =>
-    !scheduledGroupHasEnded(item, now)
+    bestSlotEndEpoch(item) > now
     && (!requiresGM || item.availableGMs.length > 0) && item.count >= minimum
   );
   return enough.sort((a, b) => b.count - a.count || a.date.localeCompare(b.date) || PERIOD_KEYS.indexOf(a.period) - PERIOD_KEYS.indexOf(b.period));
@@ -2626,7 +2642,7 @@ function scheduleResultsText() {
     const discordTime = local.startEpoch && local.endEpoch
       ? "｜Discord：<t:" + Math.floor(local.startEpoch / 1000) + ":F>～<t:" + Math.floor(local.endEpoch / 1000) + ":t>"
       : "";
-    lines.push(localizedSlotLabel(slot.date, slot.period) + "（" + slot.count + " 位玩家" + gmText + "）：" + slot.players.map(p => p.playerName).join("、") + discordTime);
+    lines.push(bestSlotTimeLabel(slot) + "（" + slot.count + " 位玩家" + gmText + "）：" + slot.players.map(p => p.playerName).join("、") + discordTime);
   }
   lines.push("", "【已排定團務】");
   for (const [index, group] of (schedule.scheduledGroups || []).entries()) {
