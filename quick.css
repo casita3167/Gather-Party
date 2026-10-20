@@ -541,3 +541,16 @@
 .schedule-topbar .time-zone-notice { flex:0 1 auto; max-width:100%; min-width:0; margin:0 0 0 auto; padding:0; border:0; border-radius:0; background:transparent; text-align:right; gap:2px; font-size:.83rem; }
 .schedule-topbar .time-zone-notice span { font-size:.76rem; overflow-wrap:anywhere; }
 @media (max-width:600px) { .schedule-topbar { gap:10px; } .schedule-topbar .time-zone-notice { flex-basis:100%; } }
+
+#manual-group-dialog { width:min(680px,calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:90dvh; box-sizing:border-box; overflow:auto; border:1px solid var(--line); border-radius:18px; padding:0; }
+#manual-group-dialog::backdrop { background:#20233466; }
+#manual-group-dialog .manual-group-card { box-sizing:border-box; width:100%; padding:22px; }
+.manual-group-roster { display:grid; gap:10px; margin:16px 0; }
+.manual-group-person { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto auto; gap:8px; align-items:end; padding:10px; background:#f7f7fb; border:1px solid var(--line); border-radius:10px; }
+#manual-group-dialog .manual-group-person label { margin:0; min-width:0; font-size:.85rem; }
+#manual-group-dialog .manual-group-person input,#manual-group-dialog .manual-group-person select { width:100%; min-width:0; box-sizing:border-box; }
+#manual-group-dialog label.manual-group-gm { display:flex; align-items:center; gap:5px; align-self:center; }
+#manual-group-dialog .manual-group-gm input[type=checkbox] { appearance:auto; width:18px; height:18px; min-width:18px; flex:0 0 18px; margin:0; padding:0; }
+.manual-group-preview { display:flex; flex-wrap:wrap; gap:6px; margin:16px 0; }
+.manual-group-error { color:#b42323; font-size:.9rem; }
+@media(max-width:520px) { .manual-group-person { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } #manual-group-dialog .manual-group-card { padding:16px; } }
