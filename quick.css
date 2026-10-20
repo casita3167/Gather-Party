@@ -567,3 +567,8 @@
 .confirmed-groups-card .group-summary-time,.confirmed-groups-card .group-gm-names { font-size:.85rem; }
 .confirmed-groups-card .best-slot-players { justify-content:flex-start; gap:7px; padding:3px; }
 .confirmed-groups-card .empty { grid-column:1 / -1; }
+
+.confirmed-groups-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:12px; }
+.confirmed-groups-heading h2 { margin:0; }
+.confirmed-groups-heading label { display:flex; align-items:center; gap:8px; margin:0; color:var(--muted); font-size:.8rem; }
+.confirmed-groups-heading select { width:auto; max-width:100%; margin:0; padding:7px 10px; font-size:.85rem; }
