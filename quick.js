@@ -1242,10 +1242,23 @@ function manualGroupParticipants(rows) {
   });
 }
 
+function groupRevisionSignature(value) {
+  function canonical(item) {
+    if (Array.isArray(item)) return item.map(canonical);
+    if (item && typeof item === "object") {
+      return Object.fromEntries(Object.keys(item).sort().filter(key => item[key] !== undefined)
+        .map(key => [key, canonical(item[key])]));
+    }
+    return item;
+  }
+  return JSON.stringify(canonical(value));
+}
+
 function openManualGroupDialog(existingGroup = null) {
   if (!canManageSchedule || !routeInfo().token || schedule?.closed) return;
   if (document.querySelector("#manual-group-dialog")) return;
   const scheduleId = schedule.id;
+  const originalRevision = existingGroup ? groupRevisionSignature(existingGroup) : "";
   const roster = uniqueSubmittedResponses(responses);
   const dialog = document.createElement("dialog");
   dialog.id = "manual-group-dialog";
@@ -1356,7 +1369,7 @@ function openManualGroupDialog(existingGroup = null) {
         if (Object.hasOwn(data.lockedDates || {}, date)) throw Error("該日期不開放，請先解除鎖定。");
         const currentGroup = existingGroup ? (data.scheduledGroups || []).find(item => item.id === groupId) : null;
         if (existingGroup && !currentGroup) throw Error("此團務已被取消，請關閉視窗後重新確認。");
-        if (existingGroup && JSON.stringify(currentGroup) !== JSON.stringify(existingGroup)) throw Error("團務已在其他視窗修改，請重新開啟後再編輯。");
+        if (existingGroup && groupRevisionSignature(currentGroup) !== originalRevision) throw Error("團務已在其他視窗修改，請重新開啟後再編輯。");
         const group = {...(currentGroup || {}), id:groupId, title, date, period, periods:{...(data.periods || {}), [period]:timeRange}, timeZone:currentGroup?.timeZone || data.timeZone || DEFAULT_TIME_ZONE, participants:people, createdAt:currentGroup?.createdAt || new Date().toISOString(), updatedAt:new Date().toISOString(), manual:true, slotClosed:true};
         if (scheduledGroupHasEnded(group)) throw Error("此時段已結束，請選擇其他時間。");
         const groups = data.scheduledGroups || [];
