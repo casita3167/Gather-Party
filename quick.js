@@ -522,6 +522,7 @@ async function openSchedule(id, routeManagementToken = "") {
           schedule.timeZone = latest.data().timeZone || DEFAULT_TIME_ZONE;
           schedule.selectedParticipants = latest.data().selectedParticipants || {};
           schedule.scheduledGroups = latest.data().scheduledGroups || [];
+          schedule.manualGroupDefaults = latest.data().manualGroupDefaults || null;
           restoreLockedChoices();
           refreshChoiceControls(schedule.periods || {});
           refreshOverview();
@@ -1225,9 +1226,9 @@ function scheduledGroupTitle(group, index) {
 
 function manualGroupTimeRange(start, end) {
   const valid = value => /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(value);
-  if (!valid(start) || !(valid(end) || end === "24:00")) throw Error("請以 HH:MM 輸入時間，例如 20:00；結束可填 24:00。");
+  if (!valid(start) || (end && !(valid(end) || end === "24:00"))) throw Error("請以 HH:MM 輸入時間，例如 20:00；結束可填 24:00。");
   if (start === end) throw Error("開始與結束時間不能相同。");
-  return start + "～" + end;
+  return start + "～" + (end || "24:00");
 }
 
 function manualGroupParticipants(rows) {
@@ -1267,9 +1268,10 @@ function openManualGroupDialog(existingGroup = null) {
     <div class="dialog-head"><h2 id="manual-group-title">${existingGroup ? "修改團務資訊" : "手動新增團務"}</h2><button type="button" class="icon-button" data-close aria-label="關閉">×</button></div>
     <label>團務名稱<input name="groupTitle" maxlength="80" required placeholder="例如：符咒學課程"></label>
     <div class="form-grid"><label>日期<input name="groupDate" type="date" required value="${taiwanTodayKey(scheduleTimeZone())}"></label><label>鎖定時段<select name="groupPeriod">${PERIOD_KEYS.map(period => `<option value="${period}">${period}（${escapeHtml(schedule.periods?.[period] || "")}）</option>`).join("")}</select></label></div>
-    <div class="form-grid"><label>開始時間<input name="groupStart" type="text" inputmode="numeric" maxlength="5" placeholder="20:00" required></label><label>結束時間<input name="groupEnd" type="text" inputmode="numeric" maxlength="5" placeholder="23:00 或 24:00" required></label></div>
-    <p class="muted">時間以團務時區為準，以 HH:MM 輸入；結束早於開始代表跨到隔天。鎖定時段用來指定停止加入的早上、下午或晚上。</p>
+    <div class="form-grid"><label>開始時間<input name="groupStart" type="text" inputmode="numeric" maxlength="5" placeholder="20:00" required></label><label>結束時間（選填）<input name="groupEnd" type="text" inputmode="numeric" maxlength="5" placeholder="可留空"></label></div>
+    <p class="muted">時間以團務時區為準，以 HH:MM 輸入；結束早於開始代表跨到隔天。鎖定時段用來指定停止加入的早上、下午或晚上。未填結束時間時，只顯示開始時間，隔日標示已結團。</p>
     <p class="muted">日期與時段以團務時區為準。可選已填表成員，或直接輸入未填表人員；勾選 GM 後會以黃色泡泡顯示。儲存後此時段停止加入，取消該團才會重新開放。</p>
+    <p class="muted">本表會記住這次的 GM 與玩家名單，下次新增團務自動帶入，仍可調整。</p>
     <div class="manual-group-roster"></div>
     <button type="button" class="button secondary" data-add-person>＋ 新增成員</button>
     <div class="manual-group-preview" aria-label="成員預覽"></div>
@@ -1336,11 +1338,16 @@ function openManualGroupDialog(existingGroup = null) {
     const parsed = parsePeriodRange((existingGroup.periods || schedule.periods || {})[existingGroup.period] || "");
     if (parsed) {
       form.elements.groupStart.value = String(parsed.startHour).padStart(2,"0") + ":" + String(parsed.startMinute).padStart(2,"0");
-      form.elements.groupEnd.value = String(parsed.endHour).padStart(2,"0") + ":" + String(parsed.endMinute).padStart(2,"0");
+      form.elements.groupEnd.value = existingGroup.noEndTime ? "" : String(parsed.endHour).padStart(2,"0") + ":" + String(parsed.endMinute).padStart(2,"0");
     }
     (existingGroup.participants || []).forEach(person => addRow(person));
     form.querySelector('button[type="submit"]').textContent = "儲存修改";
-  } else addRow();
+  } else {
+    const defaults = schedule.manualGroupDefaults?.participants
+      || [...(schedule.scheduledGroups || [])].reverse().find(group => group.manual)?.participants || [];
+    if (defaults.length) defaults.forEach(person => addRow(person));
+    else addRow();
+  }
   preview();
   form.onsubmit = async event => {
     event.preventDefault();
@@ -1370,7 +1377,7 @@ function openManualGroupDialog(existingGroup = null) {
         const currentGroup = existingGroup ? (data.scheduledGroups || []).find(item => item.id === groupId) : null;
         if (existingGroup && !currentGroup) throw Error("此團務已被取消，請關閉視窗後重新確認。");
         if (existingGroup && groupRevisionSignature(currentGroup) !== originalRevision) throw Error("團務已在其他視窗修改，請重新開啟後再編輯。");
-        const group = {...(currentGroup || {}), id:groupId, title, date, period, periods:{...(data.periods || {}), [period]:timeRange}, timeZone:currentGroup?.timeZone || data.timeZone || DEFAULT_TIME_ZONE, participants:people, createdAt:currentGroup?.createdAt || new Date().toISOString(), updatedAt:new Date().toISOString(), manual:true, slotClosed:true};
+        const group = {...(currentGroup || {}), id:groupId, title, date, period, periods:{...(data.periods || {}), [period]:timeRange}, timeZone:currentGroup?.timeZone || data.timeZone || DEFAULT_TIME_ZONE, participants:people, noEndTime:!form.elements.groupEnd.value.trim(), createdAt:currentGroup?.createdAt || new Date().toISOString(), updatedAt:new Date().toISOString(), manual:true, slotClosed:true};
         if (scheduledGroupHasEnded(group)) throw Error("此時段已結束，請選擇其他時間。");
         const groups = data.scheduledGroups || [];
         const otherGroups = groups.filter(item => item.id !== groupId);
@@ -1384,7 +1391,7 @@ function openManualGroupDialog(existingGroup = null) {
         }
         const selectedParticipants = {...(data.selectedParticipants || {})};
         delete selectedParticipants[slotSelectionKey(date, period)];
-        tx.update(ref, {scheduledGroups:existingGroup ? groups.map(item => item.id === groupId ? group : item) : [...groups,group], selectedParticipants});
+        tx.update(ref, {scheduledGroups:existingGroup ? groups.map(item => item.id === groupId ? group : item) : [...groups,group], selectedParticipants, manualGroupDefaults:{participants:people}});
       });
       dialog.close();
       toast(existingGroup ? "團務資訊已更新" : "已新增團務");
@@ -1409,6 +1416,19 @@ function sortedScheduledGroupEntries(groups, sort = scheduledGroupSort) {
   });
 }
 
+function scheduledGroupTimeLabel(group) {
+  const ranges = group.periods || schedule?.periods || {};
+  const zone = group.timeZone || scheduleTimeZone();
+  if (!group.noEndTime) return localizedSlotLabel(group.date, group.period, ranges, zone);
+  const info = localizedPeriodInfo(group.date, group.period, ranges, zone);
+  if (info.startEpoch == null) return group.date + "・" + group.period;
+  const start = new Intl.DateTimeFormat("zh-TW", {
+    timeZone:viewerTimeZone(), month:"numeric", day:"numeric", weekday:"short",
+    hour:"2-digit", minute:"2-digit", hourCycle:"h23"
+  }).format(new Date(info.startEpoch));
+  return start + " 起・" + group.period;
+}
+
 function scheduledGroupsMarkup() {
   const groups = Array.isArray(schedule?.scheduledGroups) ? schedule.scheduledGroups : [];
   if (!groups.length) return '<div class="empty small">尚未排定團務。選取玩家達到上限即可存成一團。</div>';
@@ -1418,9 +1438,9 @@ function scheduledGroupsMarkup() {
     const key = `${schedule.id}:${group.id}`;
     const gmNames = (group.participants || []).filter(person => person.isGM).map(person => person.playerName).join("、");
     return `<details class="scheduled-group ${ended ? "ended" : ""}" data-group-expand="${escapeHtml(key)}" ${expandedScheduledGroups.has(key) ? "open" : ""}>
-      <summary><b>${escapeHtml(title)}${ended ? ' <span class="group-ended-label">已結團</span>' : ""}</b><span class="group-summary-time">${escapeHtml(localizedSlotLabel(group.date, group.period, group.periods || schedule.periods, group.timeZone || scheduleTimeZone()))}</span>${gmNames ? `<span class="group-gm-names">GM：${escapeHtml(gmNames)}</span>` : ""}</summary>
+      <summary><b>${escapeHtml(title)}${ended ? ' <span class="group-ended-label">已結團</span>' : ""}</b><span class="group-summary-time">${escapeHtml(scheduledGroupTimeLabel(group))}</span>${gmNames ? `<span class="group-gm-names">GM：${escapeHtml(gmNames)}</span>` : ""}<span class="best-slot-players">${(group.participants || []).map(player => `<span class="best-slot-player ${player.isGM ? "gm-player" : ""}" title="${escapeHtml(player.playerName + (player.isGM ? "（GM）" : "") + (player.note ? "：" + player.note : ""))}">${escapeHtml(Array.from(player.playerName || "玩家")[0])}${player.note ? '<sup class="note-alert" aria-hidden="true">!</sup>' : ""}</span>`).join("")}</span></summary>
       <div class="scheduled-group-body">${canManageSchedule ? `<div class="group-edit-actions"><button type="button" class="best-slot-filter-clear" data-edit-group="${escapeHtml(group.id)}" ${schedule?.closed ? "disabled" : ""}>修改團務資訊</button><button type="button" class="best-slot-filter-clear" data-cancel-group="${escapeHtml(group.id)}">取消此團</button></div>` : ""}
-      <div class="best-slot-players">${(group.participants || []).map(player => `<span class="best-slot-player ${player.isGM ? "gm-player" : ""}" title="${escapeHtml(player.playerName + (player.isGM ? "（GM）" : "") + (player.note ? "：" + player.note : ""))}">${escapeHtml(Array.from(player.playerName || "玩家")[0])}${player.note ? '<sup class="note-alert" aria-hidden="true">!</sup>' : ""}</span>`).join("")}</div></div>
+</div>
     </details>`;
   }).join("");
 }
@@ -2596,7 +2616,7 @@ function scheduleResultsText() {
   }
   lines.push("", "【已排定團務】");
   for (const [index, group] of (schedule.scheduledGroups || []).entries()) {
-    lines.push(`${scheduledGroupTitle(group, index)}${scheduledGroupHasEnded(group) ? "（已結團）" : ""}：${localizedSlotLabel(group.date, group.period, group.periods || schedule.periods, group.timeZone || scheduleTimeZone())}：${(group.participants || []).map(player => player.playerName + (player.isGM ? "（GM）" : "")).join("、")}`);
+    lines.push(`${scheduledGroupTitle(group, index)}${scheduledGroupHasEnded(group) ? "（已結團）" : ""}：${scheduledGroupTimeLabel(group)}：${(group.participants || []).map(player => player.playerName + (player.isGM ? "（GM）" : "")).join("、")}`);
   }
   lines.push("", "【玩家填寫結果】");
   for (const player of participants) {
