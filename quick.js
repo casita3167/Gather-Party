@@ -1586,7 +1586,7 @@ function scheduledGroupsForSlot(slot) {
 
 function bestSlotTimeLabel(slot, now = Date.now()) {
   const groups = scheduledGroupsForSlot(slot);
-  if (!groups.length) return localizedSlotLabel(slot.date, slot.period);
+  if (!groups.length) return scheduledGroupTimeLabel(slot);
   const active = groups.filter(group => !scheduledGroupHasEnded(group, now));
   return [...new Set((active.length ? active : groups).map(scheduledGroupTimeLabel))].join("／");
 }
