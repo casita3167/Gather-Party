@@ -1428,6 +1428,19 @@ function scheduledGroupTimeLabel(group) {
   return start + " 起・" + group.period;
 }
 
+function scheduledGroupTimeTooltip(group) {
+  const sourceZone = group.timeZone || scheduleTimeZone();
+  const info = localizedPeriodInfo(group.date, group.period, group.periods || schedule?.periods || {}, sourceZone);
+  if (info.startEpoch == null) return "";
+  const format = zone => new Intl.DateTimeFormat("zh-TW", {
+    timeZone:zone, year:"numeric", month:"numeric", day:"numeric", weekday:"short",
+    hour:"2-digit", minute:"2-digit", hourCycle:"h23"
+  }).format(new Date(info.startEpoch));
+  const localZone = viewerTimeZone();
+  return "你的時間：" + format(localZone) + "（" + timeZoneName(localZone) + "）"
+    + "\n團務時間：" + format(sourceZone) + "（" + timeZoneName(sourceZone) + "）";
+}
+
 function scheduledGroupsMarkup() {
   const groups = Array.isArray(schedule?.scheduledGroups) ? schedule.scheduledGroups : [];
   if (!groups.length) return '<div class="empty small">尚未排定團務。選取玩家達到上限即可存成一團。</div>';
@@ -1437,7 +1450,7 @@ function scheduledGroupsMarkup() {
     const key = `${schedule.id}:${group.id}`;
     const gmNames = (group.participants || []).filter(person => person.isGM).map(person => person.playerName).join("、");
     return `<details class="scheduled-group ${ended ? "ended" : ""}" data-group-expand="${escapeHtml(key)}" ${expandedScheduledGroups.has(key) ? "open" : ""}>
-      <summary><b>${escapeHtml(title)}${ended ? ' <span class="group-ended-label">已結團</span>' : ""}</b><span class="group-summary-time">${escapeHtml(scheduledGroupTimeLabel(group))}</span>${gmNames ? `<span class="group-gm-names">GM：${escapeHtml(gmNames)}</span>` : ""}<span class="best-slot-players">${[...(group.participants || [])].sort((a, b) => Number(b.isGM === true) - Number(a.isGM === true)).map(player => `<span class="best-slot-player ${player.isGM ? "gm-player" : ""}" title="${escapeHtml(player.playerName + (player.isGM ? "（GM）" : "") + (player.note ? "：" + player.note : ""))}">${escapeHtml(Array.from(player.playerName || "玩家")[0])}${player.note ? '<sup class="note-alert" aria-hidden="true">!</sup>' : ""}</span>`).join("")}</span></summary>
+      <summary><b>${escapeHtml(title)}${ended ? ' <span class="group-ended-label">已結團</span>' : ""}</b><span class="group-summary-time" tabindex="0" title="${escapeHtml(scheduledGroupTimeTooltip(group))}" aria-label="${escapeHtml(scheduledGroupTimeTooltip(group))}">${escapeHtml(scheduledGroupTimeLabel(group))}</span>${gmNames ? `<span class="group-gm-names">GM：${escapeHtml(gmNames)}</span>` : ""}<span class="best-slot-players">${[...(group.participants || [])].sort((a, b) => Number(b.isGM === true) - Number(a.isGM === true)).map(player => `<span class="best-slot-player ${player.isGM ? "gm-player" : ""}" title="${escapeHtml(player.playerName + (player.isGM ? "（GM）" : "") + (player.note ? "：" + player.note : ""))}">${escapeHtml(Array.from(player.playerName || "玩家")[0])}${player.note ? '<sup class="note-alert" aria-hidden="true">!</sup>' : ""}</span>`).join("")}</span></summary>
       <div class="scheduled-group-body">${canManageSchedule ? `<div class="group-edit-actions"><button type="button" class="best-slot-filter-clear" data-edit-group="${escapeHtml(group.id)}" ${schedule?.closed ? "disabled" : ""}>修改團務資訊</button><button type="button" class="best-slot-filter-clear" data-cancel-group="${escapeHtml(group.id)}">取消此團</button></div>` : ""}
 </div>
     </details>`;
@@ -2680,7 +2693,7 @@ function installParticipantTooltip() {
   document.body.append(tooltip);
   let active = null;
   let originalTitle = "";
-  const selector = ".player-filter-person, .scheduled-group .best-slot-player";
+  const selector = ".player-filter-person, .scheduled-group .best-slot-player, .scheduled-group .group-summary-time";
   function hide() {
     if (active) {
       active.setAttribute("title", originalTitle);
