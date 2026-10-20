@@ -1438,6 +1438,7 @@ function scheduledGroupTimeTooltip(group) {
     hour:"2-digit", minute:"2-digit", hourCycle:"h23"
   }).format(new Date(info.startEpoch));
   const localZone = viewerTimeZone();
+  if (localZone === sourceZone) return format(localZone) + "・" + timeZoneName(localZone);
   return "你的時間：" + format(localZone) + "（" + timeZoneName(localZone) + "）"
     + "\n團務時間：" + format(sourceZone) + "（" + timeZoneName(sourceZone) + "）";
 }
