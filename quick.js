@@ -486,6 +486,7 @@ async function openSchedule(id, routeManagementToken = "") {
     await loadManagementAccess(routeManagementToken);
     await ensureShortLinks();
     await cleanExpiredAvailability(id);
+    await cleanExpiredScheduledGroups(id);
     const mine = await getDoc(doc(db, "quickSchedules", id, "responses", user.uid));
     const mineData = mine.exists() ? mine.data() : null;
     if (mineData?.submitted === true) rememberParticipation(id);
@@ -1210,6 +1211,38 @@ async function cleanExpiredAvailability(id) {
   if (permissionDenied && canManageSchedule) toast("過期時間已隱藏；資料清理需發布新版資料庫規則。");
 }
 
+function currentMonthScheduledGroups(groups = [], cutoff = availabilityMonthStart()) {
+  return (Array.isArray(groups) ? groups : []).filter(group =>
+    !/^\d{4}-\d{2}-\d{2}$/.test(group?.date || "") || group.date >= cutoff);
+}
+
+const pendingExpiredGroupCleanup = new Set();
+
+async function cleanExpiredScheduledGroups(id) {
+  if (!canManageSchedule || !routeInfo().token || schedule?.id !== id || pendingExpiredGroupCleanup.has(id)) return;
+  const original = schedule.scheduledGroups || [];
+  if (currentMonthScheduledGroups(original).length === original.length) return;
+  pendingExpiredGroupCleanup.add(id);
+  try {
+    const kept = await runTransaction(db, async tx => {
+      const ref = doc(db, "quickSchedules", id);
+      const snap = await tx.get(ref);
+      if (!snap.exists()) return null;
+      const data = snap.data();
+      const cutoff = taiwanTodayKey(data.timeZone || DEFAULT_TIME_ZONE).slice(0, 7) + "-01";
+      const groups = Array.isArray(data.scheduledGroups) ? data.scheduledGroups : [];
+      const remaining = currentMonthScheduledGroups(groups, cutoff);
+      if (remaining.length !== groups.length) tx.update(ref, {scheduledGroups:remaining});
+      return remaining;
+    });
+    if (kept && schedule?.id === id) schedule.scheduledGroups = kept;
+  } catch (error) {
+    console.error("已過月份團務清理失敗", error);
+  } finally {
+    pendingExpiredGroupCleanup.delete(id);
+  }
+}
+
 function scheduledGroupEndEpoch(group) {
   const info = localizedPeriodInfo(group.date, group.period, group.periods || schedule?.periods || {}, group.timeZone || scheduleTimeZone());
   // If a legacy time range is invalid, end the card at the end of its calendar day.
@@ -1444,7 +1477,7 @@ function scheduledGroupTimeTooltip(group) {
 }
 
 function scheduledGroupsMarkup() {
-  const groups = Array.isArray(schedule?.scheduledGroups) ? schedule.scheduledGroups : [];
+  const groups = currentMonthScheduledGroups(schedule?.scheduledGroups);
   if (!groups.length) return '<div class="empty small">尚未排定團務。選取玩家達到上限即可存成一團。</div>';
   return sortedScheduledGroupEntries(groups).map(({group, index}) => {
     const ended = scheduledGroupHasEnded(group);
@@ -1470,6 +1503,7 @@ function refreshScheduledGroups() {
   const container = document.querySelector("#scheduled-groups");
   if (!container) return;
   container.innerHTML = scheduledGroupsMarkup();
+  cleanExpiredScheduledGroups(schedule.id);
   container.querySelectorAll("[data-group-expand]").forEach(details => {
     details.addEventListener("toggle", () => {
       if (!details.isConnected) return;
@@ -1513,8 +1547,13 @@ function refreshScheduledGroups() {
     };
   });
   const now = Date.now();
-  const nextEnds = (schedule?.scheduledGroups || []).map(scheduledGroupEndEpoch).filter(end => end > now);
-  if (nextEnds.length) scheduledGroupStatusTimer = setTimeout(refreshScheduledGroups, Math.min(2147483647, Math.max(1, Math.min(...nextEnds) - now + 50)));
+  const nextEnds = currentMonthScheduledGroups(schedule?.scheduledGroups).map(scheduledGroupEndEpoch).filter(end => end > now);
+  const today = taiwanTodayKey(scheduleTimeZone());
+  const nextMonth = Number(today.slice(5,7)) === 12
+    ? (Number(today.slice(0,4)) + 1) + "-01-01"
+    : today.slice(0,4) + "-" + String(Number(today.slice(5,7)) + 1).padStart(2,"0") + "-01";
+  nextEnds.push(zonedDateTimeEpoch(nextMonth, 0, 0, scheduleTimeZone()));
+  scheduledGroupStatusTimer = setTimeout(refreshScheduledGroups, Math.min(2147483647, Math.max(1, Math.min(...nextEnds) - now + 50)));
   container.querySelectorAll("[data-cancel-group]").forEach(button => {
     button.onclick = async () => {
       if (!canManageSchedule || !routeInfo().token || !confirm("確定取消這一團？玩家填寫的可用時間會保留。")) return;
@@ -2645,7 +2684,7 @@ function scheduleResultsText() {
     lines.push(bestSlotTimeLabel(slot) + "（" + slot.count + " 位玩家" + gmText + "）：" + slot.players.map(p => p.playerName).join("、") + discordTime);
   }
   lines.push("", "【已排定團務】");
-  for (const [index, group] of (schedule.scheduledGroups || []).entries()) {
+  for (const [index, group] of currentMonthScheduledGroups(schedule.scheduledGroups).entries()) {
     lines.push(`${scheduledGroupTitle(group, index)}${scheduledGroupHasEnded(group) ? "（已結團）" : ""}：${scheduledGroupTimeLabel(group)}：${(group.participants || []).map(player => player.playerName + (player.isGM ? "（GM）" : "")).join("、")}`);
   }
   lines.push("", "【玩家填寫結果】");
