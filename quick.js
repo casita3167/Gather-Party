@@ -1476,10 +1476,16 @@ function scheduledGroupTimeTooltip(group) {
     + "\n團務時間：" + format(sourceZone) + "（" + timeZoneName(sourceZone) + "）";
 }
 
+function nextConfirmedStart(group) {
+  return localizedPeriodInfo(group.date, group.period, group.periods || schedule?.periods || {}, group.timeZone || scheduleTimeZone()).startEpoch;
+}
+
 function nearestConfirmedDay(groups, now = Date.now()) {
-  const upcoming = sortedScheduledGroupEntries(groups, "date-asc")
-    .map(({group}) => group).filter(group => !scheduledGroupHasEnded(group, now));
-  return upcoming.filter(group => group.date === upcoming[0]?.date);
+  return sortedScheduledGroupEntries(groups, "date-asc").map(({group}) => group)
+    .filter(group => {
+      const start = nextConfirmedStart(group);
+      return start != null && start >= now && !scheduledGroupHasEnded(group, now);
+    }).slice(0, 1);
 }
 
 function nextConfirmedMarkup() {
@@ -1574,6 +1580,8 @@ function refreshScheduledGroups() {
     ? (Number(today.slice(0,4)) + 1) + "-01-01"
     : today.slice(0,4) + "-" + String(Number(today.slice(5,7)) + 1).padStart(2,"0") + "-01";
   nextEnds.push(zonedDateTimeEpoch(nextMonth, 0, 0, scheduleTimeZone()));
+  const next = nearestConfirmedDay(currentMonthScheduledGroups(schedule?.scheduledGroups), now)[0];
+  if (next) nextEnds.push(nextConfirmedStart(next));
   scheduledGroupStatusTimer = setTimeout(refreshScheduledGroups, Math.min(2147483647, Math.max(1, Math.min(...nextEnds) - now + 50)));
   container.querySelectorAll("[data-cancel-group]").forEach(button => {
     button.onclick = async () => {
