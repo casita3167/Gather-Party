@@ -971,7 +971,7 @@ function renderSchedule(mineData) {
   const privateLink = managementToken ? (managementShortUrl || manageUrl(schedule.id, managementToken)) : "";
   root.innerHTML = `<main class="quick-shell">${brand()}
     <div class="schedule-topbar"><a class="quick-back" href="./quick.html" aria-label="回到建立快速約團頁面">← 上一頁：建立快速約團</a>${timeZoneNoticeMarkup()}</div>
-    <section class="schedule-banner"><div><span class="eyebrow">QUICK SCHEDULER</span><h1>${escapeHtml(schedule.title)}</h1><p>建立者／統計者：${escapeHtml(schedule.coordinatorName)}${schedule.gmName ? `・實際 GM：${escapeHtml(schedule.gmName)}` : ""}</p></div>${schedule.contact ? `<div class="contact-card"><span>給玩家的聯絡方式</span><b>${escapeHtml(schedule.contact)}</b></div>` : ""}</section>
+    <section class="schedule-banner"><div><span class="eyebrow">QUICK SCHEDULER</span><h1>${escapeHtml(schedule.title)}</h1><p>建立者／統計者：${escapeHtml(schedule.coordinatorName)}${schedule.gmName ? `・實際 GM：${escapeHtml(schedule.gmName)}` : ""}</p></div><div class="schedule-banner-side"><section id="next-confirmed" class="next-confirmed" aria-live="polite"></section>${schedule.contact ? `<div class="contact-card"><span>給玩家的聯絡方式</span><b>${escapeHtml(schedule.contact)}</b></div>` : ""}</div></section>
     ${schedule.note ? `<p class="quick-note">${escapeHtml(schedule.note)}</p>` : ""}
     <p id="schedule-status" role="status"></p><div class="management-actions"><button class="button secondary" id="export-results" type="button">匯出約團結果</button>${canManageSchedule ? `<button class="button reject" id="close-schedule" type="button">結束約團</button>` : ""}</div>
     <div class="schedule-grid"><div class="schedule-left-column"><form id="response-form" class="quick-card"><h2>填寫我的時間</h2><p>先從月曆點選你要填寫的日期，再選早上、下午、晚上、△ 不確定或 X。△ 表示當天可能有空、時段未定，不計入確定成團人數。儲存後仍可隨時回來修改日期。</p>${periodLegendMarkup(periodRanges)}<label>玩家名稱<input name="playerName" maxlength="30" value="${escapeHtml(mineData?.playerName || localStorage.getItem("gather-party-player") || "")}" required></label>${gmClaimMarkup(responses.find(r => r.id === user?.uid)?.isGM === true)}<div class="date-picker-head"><h3 id="response-month-title">${responseMonthCursor.getFullYear()} 年 ${responseMonthCursor.getMonth() + 1} 月</h3><div class="date-picker-nav"><button class="mini-button" id="response-prev" type="button">‹</button><button class="mini-button" id="response-today" type="button">今</button><button class="mini-button" id="response-next" type="button">›</button></div></div><div class="date-preset-bar" aria-label="快速選擇本月日期"><span>快速選日期</span><button class="date-preset-button" type="button" data-date-preset="weekdays">週一～週五</button><button class="date-preset-button" type="button" data-date-preset="weekends">週末</button><button class="date-preset-button" type="button" data-date-preset="all">全月</button><button class="date-preset-button clear" type="button" data-date-preset="clear">清除本月</button></div><div id="response-calendar">${responseCalendarMarkup()}</div><section class="batch-choice-panel"><div><h3>批次設定時段</h3><p id="batch-choice-count">目前批次 0 天</p><small>套用時段後按「儲存時間」，日期會收進編號批次；接著即可繼續選下一批。</small></div><div class="batch-choice-actions">${PERIOD_KEYS.map(period => `<button class="choice-button batch-choice-button" type="button" data-batch-choice="${period}">${period}</button>`).join("")}<button class="choice-button uncertain batch-choice-button" type="button" data-batch-choice="△" title="當天可能有空，時段尚未確定" aria-label="不確定">△</button><button class="choice-button no batch-choice-button" type="button" data-batch-choice="X">X</button><button class="choice-button clear batch-choice-button" type="button" data-batch-choice="clear">清除時段</button></div></section><details class="choice-details" id="choice-details" ${choices.size <= 3 ? "open" : ""}><summary>逐日調整 <span id="choice-summary-count">${choices.size} 天</span></summary><div class="choice-list" id="response-choice-list">${responseChoiceListMarkup(periodRanges)}</div></details><label>備註<textarea name="note" maxlength="500" placeholder="例如：晚上九點後才有空、這天可能需要再確認">${escapeHtml(mineData?.note || "")}</textarea></label><div class="quick-form-actions"><span class="muted">至少選擇一個日期，且每個日期都要選時段、△ 不確定或 X</span><button class="button" type="submit">儲存時間</button></div></form>
@@ -1476,6 +1476,18 @@ function scheduledGroupTimeTooltip(group) {
     + "\n團務時間：" + format(sourceZone) + "（" + timeZoneName(sourceZone) + "）";
 }
 
+function nearestConfirmedDay(groups, now = Date.now()) {
+  const upcoming = sortedScheduledGroupEntries(groups, "date-asc")
+    .map(({group}) => group).filter(group => !scheduledGroupHasEnded(group, now));
+  return upcoming.filter(group => group.date === upcoming[0]?.date);
+}
+
+function nextConfirmedMarkup() {
+  const groups = nearestConfirmedDay(currentMonthScheduledGroups(schedule?.scheduledGroups));
+  if (!groups.length) return "";
+  return `<h2>最近已成團</h2><ul>${groups.map(group => `<li><strong>${escapeHtml(scheduledGroupTitle(group, schedule.scheduledGroups.indexOf(group)))}</strong><span>${escapeHtml(scheduledGroupTimeLabel(group))}${(group.participants || []).filter(person => person.isGM).map(person => escapeHtml(person.playerName)).join("、") ? "・GM：" + (group.participants || []).filter(person => person.isGM).map(person => escapeHtml(person.playerName)).join("、") : ""}</span></li>`).join("")}</ul><button type="button" class="next-confirmed-link">查看全部已成團</button>`;
+}
+
 function scheduledGroupsMarkup() {
   const groups = currentMonthScheduledGroups(schedule?.scheduledGroups);
   if (!groups.length) return '<div class="empty small">尚未排定團務。選取玩家達到上限即可存成一團。</div>';
@@ -1502,6 +1514,15 @@ function refreshScheduledGroups() {
   scheduledGroupStatusTimer = null;
   const container = document.querySelector("#scheduled-groups");
   if (!container) return;
+  const highlight = document.querySelector("#next-confirmed");
+  if (highlight) {
+    const markup = nextConfirmedMarkup();
+    if (highlight.dataset.markup !== markup) {
+      highlight.dataset.markup = markup;
+      highlight.innerHTML = markup;
+      highlight.querySelector("button")?.addEventListener("click", () => container.closest(".confirmed-groups-card")?.scrollIntoView({block:"start"}));
+    }
+  }
   container.innerHTML = scheduledGroupsMarkup();
   cleanExpiredScheduledGroups(schedule.id);
   container.querySelectorAll("[data-group-expand]").forEach(details => {
