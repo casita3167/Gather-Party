@@ -574,3 +574,13 @@
 .confirmed-groups-heading select { width:auto; max-width:100%; margin:0; padding:7px 10px; font-size:.85rem; }
 
 #participant-hover-tooltip { width:max-content; max-width:min(520px,calc(100vw - 16px)); white-space:pre-line; text-align:left; }
+
+.schedule-banner-side { width:min(100%, 400px); flex:0 1 400px; align-self:center; display:grid; gap:12px; }
+.schedule-banner-side:not(:has(.contact-card)):has(.next-confirmed:empty), .next-confirmed:empty { display:none; }
+.next-confirmed { padding:15px 18px; border-inline-start:3px solid #a89aff; background:#242940; border-radius:0 12px 12px 0; overflow-wrap:anywhere; }
+.next-confirmed h2 { margin:0 0 8px; color:#ddd5ff; font-size:.88rem; }
+.next-confirmed ul { margin:0; padding:0; list-style:none; display:grid; gap:8px; }
+.next-confirmed li > * { display:block; }
+.next-confirmed li span { color:#d1d5e6; font-size:.83rem; }
+.next-confirmed-link { background:none; border:0; padding:0; margin-top:10px; color:#ddd5ff; font:inherit; font-size:.8rem; text-decoration:underline; cursor:pointer; }
+@media (max-width:760px) { .schedule-banner-side { margin-top:14px; } }
